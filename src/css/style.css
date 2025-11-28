@@ -1,3 +1,62 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  /* 1. 全局字体平滑渲染 (Apple 质感的核心) */
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    @apply text-ios-text-primary bg-ios-bg selection:bg-primary-500 selection:text-white;
+  }
+
+  /* 2. 移除 iOS Safari 点击时的默认灰色遮罩 */
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* 3. 针对 Input 自动填充的样式修正 
+     避免 Chrome 自动填充把背景变成黄色，破坏玻璃感 */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover, 
+  input:-webkit-autofill:focus, 
+  input:-webkit-autofill:active{
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: #1D1D1F;
+      transition: background-color 5000s ease-in-out 0s;
+      box-shadow: inset 0 0 20px 20px rgba(255,255,255,0);
+  }
+}
+
+@layer components {
+  /* 4. 定义通用的玻璃拟态组件类 (供 @apply 使用) */
+  .glass-panel {
+    @apply bg-white/70 backdrop-blur-xl border border-white/40 shadow-glass;
+  }
+  
+  .glass-input {
+    @apply bg-gray-50/50 border-transparent focus:bg-white focus:border-primary-500 focus:ring-4 focus:ring-primary-500/20 transition-all duration-300;
+  }
+}
+
+@layer utilities {
+  /* 5. 隐藏滚动条但保留滚动功能 (Clean UI) */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+
+  /* 6. iOS 弹簧动画曲线 */
+  .ease-ios {
+    transition-timing-function: cubic-bezier(0.25, 1, 0.5, 1);
+  }
+  
+  /* 7. 强制硬件加速 (防止大面积模糊导致卡顿) */
+  .gpu-accelerated {
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
+}
