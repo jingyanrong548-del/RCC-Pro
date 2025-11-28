@@ -1,15 +1,10 @@
 // =====================================================================
-// components.js: Apple-style UI 组件工厂
-// 职责: 生成标准化的 HTML 字符串，用于构建结果面板
+// components.js: Apple-style UI 组件工厂 (v3.3 流量版)
+// 职责: 生成标准化 HTML 片段，支持 5 列状态点详表
 // =====================================================================
 
 /**
- * 生成一个主要的 KPI 数据卡片 (用于显示 COP, 功率等核心指标)
- * @param {string} title - 标题 (如 "制冷量")
- * @param {string|number} value - 数值 (如 "125.5")
- * @param {string} unit - 单位 (如 "kW")
- * @param {string} [subtext] - 底部小字说明 (可选)
- * @param {string} [accentColor] - 强调色 'blue' | 'green' | 'orange' | 'default'
+ * 生成 KPI 核心指标卡片
  */
 export function createKpiCard(title, value, unit, subtext = '', accentColor = 'default') {
     const colorMap = {
@@ -22,7 +17,7 @@ export function createKpiCard(title, value, unit, subtext = '', accentColor = 'd
     const textColor = colorMap[accentColor] || colorMap.default;
 
     return `
-    <div class="bg-white/60 p-4 rounded-2xl border border-white/50 shadow-sm flex flex-col justify-between">
+    <div class="bg-white/60 p-4 rounded-2xl border border-white/50 shadow-sm flex flex-col justify-between transition-all hover:bg-white/80">
         <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">${title}</span>
         <div class="mt-2 flex items-baseline">
             <span class="text-3xl font-bold tracking-tight ${textColor}">${value}</span>
@@ -34,10 +29,7 @@ export function createKpiCard(title, value, unit, subtext = '', accentColor = 'd
 }
 
 /**
- * 生成一个详细数据行 (用于列表展示)
- * @param {string} label - 标签
- * @param {string} value - 数值文本
- * @param {boolean} [isHighlight] - 是否高亮背景
+ * 生成详细数据行 (Key-Value List)
  */
 export function createDetailRow(label, value, isHighlight = false) {
     const bgClass = isHighlight ? 'bg-blue-50/50 rounded-lg -mx-2 px-2 py-1' : 'py-1';
@@ -51,8 +43,6 @@ export function createDetailRow(label, value, isHighlight = false) {
 
 /**
  * 生成分节标题
- * @param {string} title 
- * @param {string} [icon] - Emoji 或简单的 SVG 图标字符串 (可选)
  */
 export function createSectionHeader(title, icon = '') {
     return `
@@ -65,11 +55,10 @@ export function createSectionHeader(title, icon = '') {
 
 /**
  * 生成错误提示卡片
- * @param {string} message 
  */
 export function createErrorCard(message) {
     return `
-    <div class="p-4 rounded-2xl bg-red-50/80 border border-red-100 text-red-800 backdrop-blur-sm shadow-sm flex items-start gap-3">
+    <div class="p-4 rounded-2xl bg-red-50/80 border border-red-100 text-red-800 backdrop-blur-sm shadow-sm flex items-start gap-3 animate-fade-in">
         <svg class="w-5 h-5 text-red-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
         </svg>
@@ -82,8 +71,7 @@ export function createErrorCard(message) {
 }
 
 /**
- * 生成经济器对比胶囊 (Badge)
- * @param {number} percentage - 提升百分比
+ * 生成 ECO 提升率胶囊
  */
 export function createEcoBadge(percentage) {
     if (percentage <= 0) return '';
@@ -94,5 +82,55 @@ export function createEcoBadge(percentage) {
         </svg>
         提升 ${percentage.toFixed(1)}%
     </span>
+    `;
+}
+
+/**
+ * [New] 生成状态点数据表格 (State Points Table - 5 Columns)
+ * @param {Array} points - 状态点对象数组 [{ name, desc, temp, press, enth, flow }]
+ */
+export function createStateTable(points) {
+    if (!points || points.length === 0) return '';
+
+    // 生成行
+    const rows = points.map((p, index) => {
+        // 斑马纹背景
+        const bgClass = index % 2 === 0 ? 'bg-white/40' : 'bg-transparent';
+        // 特殊标记：如果有点位名称包含 ECO，可以加点颜色提示 (可选)
+        const rowStyle = p.name.includes('ECO') ? 'font-medium text-blue-900' : 'text-gray-600';
+
+        return `
+        <tr class="${bgClass} text-xs transition-colors hover:bg-white/60">
+            <td class="py-2 pl-3 font-semibold text-gray-700 whitespace-nowrap">
+                ${p.name}
+                ${p.desc ? `<div class="text-[9px] text-gray-400 font-normal font-sans tracking-tight">${p.desc}</div>` : ''}
+            </td>
+            <td class="py-2 text-right font-mono ${rowStyle} tracking-tight">${p.temp}</td>
+            <td class="py-2 text-right font-mono ${rowStyle} tracking-tight">${p.press}</td>
+            <td class="py-2 text-right font-mono ${rowStyle} tracking-tight hidden sm:table-cell">${p.enth}</td> <td class="py-2 pr-3 text-right font-mono font-bold text-gray-800 tracking-tight">${p.flow}</td>
+        </tr>
+        `;
+    }).join('');
+
+    // 返回完整表格 HTML
+    // 注意：表头添加了 "m (kg/s)"
+    // 手机端通过 'hidden sm:table-cell' 隐藏焓值列，保证流量列可见
+    return `
+    <div class="overflow-x-auto rounded-xl border border-white/40 shadow-sm bg-gray-50/20 backdrop-blur-sm mt-4 no-scrollbar">
+        <table class="min-w-full">
+            <thead>
+                <tr class="border-b border-gray-200/50 bg-gray-100/40 text-left text-[10px] uppercase tracking-wider text-gray-500 font-semibold">
+                    <th class="py-2 pl-3">Point</th>
+                    <th class="py-2 text-right">T(°C)</th>
+                    <th class="py-2 text-right">P(bar)</th>
+                    <th class="py-2 text-right hidden sm:table-cell">h(kJ)</th>
+                    <th class="py-2 pr-3 text-right">m(kg/s)</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100/30">
+                ${rows}
+            </tbody>
+        </table>
+    </div>
     `;
 }

@@ -1,6 +1,6 @@
 // =====================================================================
-// mode2_oil_refrig.js: 模式一 (制冷热泵) - UI 3.0 Cockpit Edition
-// 职责: 执行计算 -> 双向渲染 (PC悬浮窗 + 移动端抽屉) -> 更新移动端摘要栏
+// mode2_oil_refrig.js: 模式一 (制冷热泵) - v3.6 Scope Fix
+// 职责: 修复函数作用域丢失导致的 "is not defined" 错误
 // =====================================================================
 
 import { updateFluidInfo } from './coolprop_loader.js';
@@ -10,21 +10,27 @@ import {
     createDetailRow, 
     createSectionHeader, 
     createEcoBadge, 
-    createErrorCard 
+    createErrorCard,
+    createStateTable 
 } from './components.js';
+import { drawPHDiagram } from './charts.js';
 
 let CP_INSTANCE = null;
 let lastCalculationData = null; 
 
 // UI References
 let calcButtonM2, calcFormM2, printButtonM2, fluidSelectM2, fluidInfoDivM2;
-let resultsDesktopM2, resultsMobileM2, summaryMobileM2; // New UI Targets
+let resultsDesktopM2, resultsMobileM2, summaryMobileM2;
 let autoEffCheckboxM2, tempEvapM2, tempCondM2, etaVM2, etaSM2;
 let ecoCheckbox, ecoSatTempInput, ecoSuperheatInput, tempDischargeActualM2;
 
 // Button States
 const BTN_TEXT_CALCULATE = "Calculate Performance";
 const BTN_TEXT_RECALCULATE = "Recalculate (Input Changed)";
+
+// ---------------------------------------------------------------------
+// Helper Functions (Top Level)
+// ---------------------------------------------------------------------
 
 function setButtonStale2() {
     if (calcButtonM2 && calcButtonM2.innerText !== BTN_TEXT_RECALCULATE) {
@@ -44,13 +50,11 @@ function setButtonFresh2() {
     }
 }
 
-// 辅助函数：同时渲染内容到 PC 和 移动端容器
 function renderToAllViews(htmlContent) {
     if(resultsDesktopM2) resultsDesktopM2.innerHTML = htmlContent;
     if(resultsMobileM2) resultsMobileM2.innerHTML = htmlContent;
 }
 
-// 辅助函数：更新移动端底部把手的摘要信息
 function updateMobileSummary(kpi1Label, kpi1Value, kpi2Label, kpi2Value) {
     if (!summaryMobileM2) return;
     summaryMobileM2.innerHTML = `
@@ -65,33 +69,43 @@ function updateMobileSummary(kpi1Label, kpi1Value, kpi2Label, kpi2Value) {
     `;
 }
 
+// [CRITICAL FIX] 必须定义在 Top Level，确保 initMode2 可以访问
 function updateAndDisplayEfficienciesM2() {
     if (!CP_INSTANCE || !autoEffCheckboxM2 || !autoEffCheckboxM2.checked) return;
     try {
         const fluid = fluidSelectM2.value;
         const Te_C = parseFloat(tempEvapM2.value);
         const Tc_C = parseFloat(tempCondM2.value);
+        
+        // 简单校验防止 CoolProp 报错
         if (isNaN(Te_C) || isNaN(Tc_C) || Tc_C <= Te_C) return;
         
         const Pe_Pa = CP_INSTANCE.PropsSI('P', 'T', Te_C + 273.15, 'Q', 1, fluid);
         const Pc_Pa = CP_INSTANCE.PropsSI('P', 'T', Tc_C + 273.15, 'Q', 1, fluid);
-        const pressureRatio = Pc_Pa / Pe_Pa;
         
+        if (!Pe_Pa || !Pc_Pa) return;
+
+        const pressureRatio = Pc_Pa / Pe_Pa;
         const efficiencies = calculateEmpiricalEfficiencies(pressureRatio);
-        etaVM2.value = efficiencies.eta_v;
-        etaSM2.value = efficiencies.eta_s;
+        
+        if (etaVM2) etaVM2.value = efficiencies.eta_v;
+        if (etaSM2) etaSM2.value = efficiencies.eta_s;
+
     } catch (error) {
-        console.warn("Auto-Eff Error:", error.message);
+        console.warn("Auto-Eff Error (Ignored):", error.message);
     }
 }
 
-// =====================================================================
+// ---------------------------------------------------------------------
 // Core Calculation Logic
-// =====================================================================
+// ---------------------------------------------------------------------
 function calculateMode2() {
-    // 1. Set Loading State (Both Screens)
-    const loadingHtml = '<div class="flex justify-center p-10"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div></div>';
-    renderToAllViews(loadingHtml);
+    // 1. Loading State
+    renderToAllViews('<div class="flex justify-center p-10"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div></div>');
+    ['chart-desktop-m2', 'chart-mobile-m2'].forEach(id => {
+        const el = document.getElementById(id);
+        if(el) el.classList.add('hidden');
+    });
     
     setTimeout(() => {
         try {
@@ -114,8 +128,8 @@ function calculateMode2() {
             const ecoPressMode = document.querySelector('input[name="eco_press_mode_m2"]:checked').value; 
             const eco_superheat_K = parseFloat(document.getElementById('eco_superheat_m2').value);
 
-            // Basic Validation
-            if (T_2a_est_C <= Tc_C) throw new Error(`Discharge temp (${T_2a_est_C}°C) must be higher than Condensing temp (${Tc_C}°C).`);
+            // Validation
+            if (T_2a_est_C <= Tc_C) throw new Error("Discharge temp must be higher than Condensing temp.");
             if (isNaN(Te_C) || isNaN(eta_v) || isNaN(eta_s_input)) throw new Error("Invalid numeric input.");
 
             // --- Calculation (CoolProp) ---
@@ -124,12 +138,13 @@ function calculateMode2() {
             const Pe_Pa = CP_INSTANCE.PropsSI('P', 'T', T_evap_K, 'Q', 1, fluid);
             const Pc_Pa = CP_INSTANCE.PropsSI('P', 'T', T_cond_K, 'Q', 1, fluid);
 
-            // Point 1 & 3
+            // Point 1: Suction
             const T_1_K = T_evap_K + superheat_K;
             const h_1 = CP_INSTANCE.PropsSI('H', 'T', T_1_K, 'P', Pe_Pa, fluid);
             const s_1 = CP_INSTANCE.PropsSI('S', 'T', T_1_K, 'P', Pe_Pa, fluid);
             const rho_1 = CP_INSTANCE.PropsSI('D', 'T', T_1_K, 'P', Pe_Pa, fluid);
             
+            // Point 3: Condenser Out
             const T_3_K = T_cond_K - subcooling_K;
             const h_3 = CP_INSTANCE.PropsSI('H', 'T', T_3_K, 'P', Pc_Pa, fluid); 
 
@@ -147,12 +162,33 @@ function calculateMode2() {
             const V_act_m3_s = V_th_m3_s * eta_v;
             const m_dot_suc = V_act_m3_s * rho_1;
 
-            // ECO Calculation
+            // --- ECO Calculation & 7-Point Analysis ---
             let m_dot_inj = 0, m_dot_total = m_dot_suc;
-            let h_liquid_to_evap = h_3;
-            let P_eco_Pa = 0, T_eco_sat_K = 0, h_inj = 0;
-            let Q_evap_W_no_eco = m_dot_suc * (h_1 - h_3);
+            let P_eco_Pa = 0, T_eco_sat_K = 0;
+            
+            // Safe Init
+            let h_4 = 0, h_5 = 0, h_6 = 0, h_7 = 0;
+            let m_p5 = 0, m_p6 = 0, m_p7 = 0; 
+            
+            // No-ECO Base
+            h_5 = h_3; 
+            h_4 = h_3; 
+            
+            const Q_evap_W_no_eco = m_dot_suc * (h_1 - h_3);
             let eco_badge_val = 0;
+
+            // Arrays for Chart
+            let mainPoints = [];     
+            let ecoLiquidPoints = []; 
+            let ecoVaporPoints = [];  
+
+            // Helper for points
+            const point = (name, h, p_pa, pos='top') => ({
+                name: name,
+                value: [h/1000, p_pa/1e5],
+                label: { position: pos, show: true }
+            });
+            const rawP = (h, p_pa) => [h/1000, p_pa/1e5];
 
             if (isEcoEnabled) {
                 if (ecoPressMode === 'auto') {
@@ -165,20 +201,82 @@ function calculateMode2() {
                     P_eco_Pa = CP_INSTANCE.PropsSI('P', 'T', T_eco_sat_K, 'Q', 0.5, fluid);
                 }
 
+                const h_eco_sat_liq = CP_INSTANCE.PropsSI('H', 'T', T_eco_sat_K, 'Q', 0, fluid);
+                const h_eco_sat_vap = CP_INSTANCE.PropsSI('H', 'T', T_eco_sat_K, 'Q', 1, fluid);
+
+                h_7 = h_3; // Isenthalpic aux expansion
+
                 if (ecoType === 'flash_tank') {
-                    h_inj = CP_INSTANCE.PropsSI('H', 'T', T_eco_sat_K, 'Q', 1, fluid);
-                    const h_liq_sat_eco = CP_INSTANCE.PropsSI('H', 'T', T_eco_sat_K, 'Q', 0, fluid);
-                    h_liquid_to_evap = h_liq_sat_eco;
-                    const x_flash = (h_3 - h_liq_sat_eco) / (h_inj - h_liq_sat_eco);
+                    h_6 = h_eco_sat_vap; 
+                    h_5 = h_eco_sat_liq; 
+                    
+                    const x_flash = (h_7 - h_5) / (h_6 - h_5);
                     m_dot_inj = m_dot_suc * (x_flash / (1 - x_flash));
+                    m_dot_total = m_dot_suc + m_dot_inj;
+
+                    h_4 = h_5; 
+
+                    m_p7 = m_dot_total; 
+                    m_p5 = m_dot_suc;   
+                    m_p6 = m_dot_inj;   
+
+                    const pt3 = point('3', h_3, Pc_Pa, 'top');
+                    const pt7 = point('7', h_7, P_eco_Pa, 'right');
+                    const pt5 = point('5', h_5, P_eco_Pa, 'bottom');
+                    const pt6 = point('6', h_6, P_eco_Pa, 'left');
+                    const pt4 = point('4', h_4, Pe_Pa, 'bottom');
+                    const pt1 = point('1', h_1, Pe_Pa, 'bottom');
+
+                    mainPoints = [pt4, pt1]; 
+                    ecoLiquidPoints = [rawP(h_3, Pc_Pa), pt7, pt5, pt4]; 
+                    ecoVaporPoints = [rawP(h_7, P_eco_Pa), pt6];
+
                 } else {
                     const T_inj_K = T_eco_sat_K + eco_superheat_K;
-                    h_inj = CP_INSTANCE.PropsSI('H', 'T', T_inj_K, 'P', P_eco_Pa, fluid);
-                    const h_liq_out = CP_INSTANCE.PropsSI('H', 'T', T_eco_sat_K + 5.0, 'P', Pc_Pa, fluid); 
-                    h_liquid_to_evap = h_liq_out;
-                    m_dot_inj = (m_dot_suc * (h_3 - h_liquid_to_evap)) / (h_inj - h_3);
+                    h_6 = CP_INSTANCE.PropsSI('H', 'T', T_inj_K, 'P', P_eco_Pa, fluid); 
+                    
+                    const T_5_K = T_eco_sat_K + 5.0;
+                    h_5 = CP_INSTANCE.PropsSI('H', 'T', T_5_K, 'P', Pc_Pa, fluid); 
+                    
+                    h_4 = h_5; 
+                    
+                    m_dot_inj = (m_dot_suc * (h_3 - h_5)) / (h_6 - h_7);
+                    m_dot_total = m_dot_suc + m_dot_inj; 
+
+                    m_p5 = m_dot_suc; 
+                    m_p7 = m_dot_inj; 
+                    m_p6 = m_dot_inj; 
+
+                    const pt3 = point('3', h_3, Pc_Pa, 'top');
+                    const pt5 = point('5', h_5, Pc_Pa, 'top');
+                    const pt4 = point('4', h_4, Pe_Pa, 'bottom');
+                    const pt7 = point('7', h_7, P_eco_Pa, 'right');
+                    const pt6 = point('6', h_6, P_eco_Pa, 'left');
+                    const pt1 = point('1', h_1, Pe_Pa, 'bottom');
+
+                    mainPoints = [pt4, pt1]; 
+                    ecoLiquidPoints = [pt3, pt5, pt4]; 
+                    ecoVaporPoints = [rawP(h_3, Pc_Pa), pt7, pt6];  
                 }
-                m_dot_total = m_dot_suc + m_dot_inj;
+            } else {
+                // No ECO
+                h_4 = h_3;
+                m_dot_total = m_dot_suc;
+                
+                const pt1 = point('1', h_1, Pe_Pa, 'bottom');
+                const pt3 = point('3', h_3, Pc_Pa, 'top');
+                const pt4 = point('4', h_4, Pe_Pa, 'bottom');
+                
+                mainPoints = [pt1]; 
+                ecoLiquidPoints = [pt3, pt4]; 
+                ecoVaporPoints = [];
+            }
+
+            // Calc Cooling
+            const Q_evap_W = m_dot_suc * (h_1 - h_4);
+
+            if (isEcoEnabled) {
+                eco_badge_val = ((Q_evap_W - Q_evap_W_no_eco) / Q_evap_W_no_eco) * 100;
             }
 
             // Power
@@ -189,7 +287,8 @@ function calculateMode2() {
             } else {
                 const h_mid_1s = CP_INSTANCE.PropsSI('H', 'P', P_eco_Pa, 'S', s_1, fluid);
                 const W_s1 = m_dot_suc * (h_mid_1s - h_1);
-                const h_mix_s = (m_dot_suc * h_mid_1s + m_dot_inj * h_inj) / m_dot_total;
+                // Safe h_6 usage (initialized above)
+                const h_mix_s = (m_dot_suc * h_mid_1s + m_dot_inj * h_6) / m_dot_total;
                 const s_mix = CP_INSTANCE.PropsSI('S', 'H', h_mix_s, 'P', P_eco_Pa, fluid);
                 const h_2s_stage2 = CP_INSTANCE.PropsSI('H', 'P', Pc_Pa, 'S', s_mix, fluid);
                 const W_s2 = m_dot_total * (h_2s_stage2 - h_mix_s);
@@ -207,10 +306,9 @@ function calculateMode2() {
                 eta_total_display = eta_s_input;
             }
 
-            // Heat Balance & Oil Load
-            const h_4 = h_liquid_to_evap;
-            const Q_evap_W = m_dot_suc * (h_1 - h_4);
-            const h_system_in = (m_dot_suc * h_1 + m_dot_inj * h_inj);
+            // Heat Balance
+            const h_system_in = (m_dot_suc * h_1 + m_dot_inj * h_6); 
+            
             const T_2a_est_K = T_2a_est_C + 273.15;
             const h_2a_target = CP_INSTANCE.PropsSI('H', 'T', T_2a_est_K, 'P', Pc_Pa, fluid);
             const energy_out_gas = m_dot_total * h_2a_target;
@@ -226,154 +324,150 @@ function calculateMode2() {
                 T_2a_final_C = T_2a_real_K - 273.15;
                 isAdishargeCorrection = true;
             }
-            
             const h_2a_final = (h_system_in + W_shaft_W - Q_oil_W) / m_dot_total;
             const Q_cond_W = m_dot_total * (h_2a_final - h_3);
             const Q_heating_total_W = Q_cond_W + Q_oil_W;
 
-            if (isEcoEnabled) {
-                eco_badge_val = ((Q_evap_W - Q_evap_W_no_eco) / Q_evap_W_no_eco) * 100;
-            }
-
-            // KPI
             const COP_R = Q_evap_W / W_input_W;
             const COP_H = Q_heating_total_W / W_input_W;
 
-            // Cache data for Print
-            lastCalculationData = {
-                fluid, Te_C, Tc_C, P_e: Pe_Pa/1e5, P_c: Pc_Pa/1e5,
-                m_dot: m_dot_total, Q_evap_W, W_input_W, Q_cond_W, Q_oil_W,
-                COP_R, COP_H, T_2a: T_2a_final_C
-            };
+            // --- Chart Finalization ---
+            const pt2 = point('2', h_2a_final, Pc_Pa, 'top');
+            const pt3 = point('3', h_3, Pc_Pa, 'top');
+            const pt4 = point('4', h_4, Pe_Pa, 'bottom');
+            const pt1 = point('1', h_1, Pe_Pa, 'bottom');
 
-            // --- 2. Render Dashboard HTML (Desktop & Mobile Body) ---
+            if (!isEcoEnabled) {
+                mainPoints = [pt1, pt2, pt3, pt4, pt1];
+            } else {
+                if (ecoType === 'flash_tank') {
+                    mainPoints.push(pt2, pt3);
+                } else {
+                    const pt5 = point('5', h_5, Pc_Pa, 'top');
+                    mainPoints = [pt4, pt1, pt2, pt3, pt5, pt4];
+                }
+            }
+
+            // Draw
+            ['chart-desktop-m2', 'chart-mobile-m2'].forEach(id => {
+                drawPHDiagram(id, {
+                    title: `P-h Diagram (${fluid})`,
+                    mainPoints, ecoLiquidPoints, ecoVaporPoints,
+                    xLabel: 'Enthalpy (kJ/kg)', yLabel: 'Pressure (bar)'
+                });
+            });
+
+            // Table
+            let T_7_disp = '-', T_5_disp = '-';
+            if (isEcoEnabled) {
+                T_7_disp = (T_eco_sat_K - 273.15).toFixed(1);
+                if (ecoType === 'flash_tank') {
+                    T_5_disp = (T_eco_sat_K - 273.15).toFixed(1);
+                } else {
+                    const T_5_K = T_eco_sat_K + 5.0; 
+                    T_5_disp = (T_5_K - 273.15).toFixed(1);
+                }
+            }
+            const T_4_disp = Te_C.toFixed(1);
+
+            const statePoints = [
+                { name: '1', desc: 'Suction', temp: Te_C.toFixed(1), press: (Pe_Pa/1e5).toFixed(2), enth: (h_1/1000).toFixed(1), flow: m_dot_suc.toFixed(3) },
+                { name: '2', desc: 'Discharge', temp: T_2a_final_C.toFixed(1), press: (Pc_Pa/1e5).toFixed(2), enth: (h_2a_final/1000).toFixed(1), flow: m_dot_total.toFixed(3) },
+                { name: '3', desc: 'Cond Out', temp: (T_3_K-273.15).toFixed(1), press: (Pc_Pa/1e5).toFixed(2), enth: (h_3/1000).toFixed(1), flow: m_dot_total.toFixed(3) },
+            ];
+
+            if (isEcoEnabled) {
+                statePoints.push(
+                    { name: '7', desc: 'ECO In', temp: T_7_disp, press: (P_eco_Pa/1e5).toFixed(2), enth: (h_7/1000).toFixed(1), flow: m_p7.toFixed(3) },
+                    { name: '6', desc: 'ECO Vap', temp: (ecoType==='flash_tank' ? T_7_disp : (T_eco_sat_K+eco_superheat_K-273.15).toFixed(1)), press: (P_eco_Pa/1e5).toFixed(2), enth: (h_6/1000).toFixed(1), flow: m_p6.toFixed(3) },
+                    { name: '5', desc: 'ECO Liq', temp: T_5_disp, press: (ecoType==='subcooler' ? Pc_Pa/1e5 : P_eco_Pa/1e5).toFixed(2), enth: (h_5/1000).toFixed(1), flow: m_p5.toFixed(3) }
+                );
+            }
+            
+            statePoints.push(
+                { name: '4', desc: 'Evap In', temp: T_4_disp, press: (Pe_Pa/1e5).toFixed(2), enth: (h_4/1000).toFixed(1), flow: m_dot_suc.toFixed(3) }
+            );
+
+            statePoints.sort((a, b) => parseInt(a.name) - parseInt(b.name));
+
             let html = `
                 <div class="grid grid-cols-2 gap-4 mb-6">
                     ${createKpiCard('制冷量 (Cooling)', (Q_evap_W/1000).toFixed(2), 'kW', `COP: ${COP_R.toFixed(2)}`, 'blue')}
                     ${createKpiCard('总供热 (Heating)', (Q_heating_total_W/1000).toFixed(2), 'kW', `COP: ${COP_H.toFixed(2)}`, 'orange')}
                 </div>
                 <div class="space-y-1 bg-white/40 p-4 rounded-2xl border border-white/50 shadow-inner">
-                    ${createSectionHeader('System Flow')}
-                    ${createDetailRow('吸气流量 (Mass)', `${m_dot_suc.toFixed(4)} kg/s`)}
-                    ${createDetailRow('吸气容积 (Vol)', `${(V_act_m3_s*3600).toFixed(1)} m³/h`)}
-                    ${createDetailRow('转速 (Speed)', rpm_display)}
-                    
-                    ${createSectionHeader('Thermodynamics')}
-                    ${createDetailRow('蒸发 (Evap)', `${Te_C.toFixed(1)}°C / ${(Pe_Pa/1e5).toFixed(2)} bar`)}
-                    ${createDetailRow('冷凝 (Cond)', `${Tc_C.toFixed(1)}°C / ${(Pc_Pa/1e5).toFixed(2)} bar`)}
-                    ${createDetailRow('排气 (Discharge)', `${T_2a_final_C.toFixed(1)}°C`, isAdishargeCorrection)}
-                    
-                    ${createSectionHeader('Power & Energy')}
-                    ${createDetailRow('输入功率 (Input)', `${(W_input_W/1000).toFixed(2)} kW`, true)}
-                    ${createDetailRow('轴功率 (Shaft)', `${(W_shaft_W/1000).toFixed(2)} kW`)}
-                    ${createDetailRow('油冷负荷 (Oil)', `${(Q_oil_W/1000).toFixed(2)} kW`)}
-                    ${createDetailRow('总等熵效率 (η_tot)', eta_total_display.toFixed(3))}
+                    ${createSectionHeader('Power & Efficiency')}
+                    ${createDetailRow('Input Power', `${(W_input_W/1000).toFixed(2)} kW`, true)}
+                    ${createDetailRow('Shaft Power', `${(W_shaft_W/1000).toFixed(2)} kW`)}
+                    ${createDetailRow('Oil Load', `${(Q_oil_W/1000).toFixed(2)} kW`)}
+                    ${isEcoEnabled ? `${createSectionHeader('Economizer', '⚡')}${createDetailRow('P_eco', `${(P_eco_Pa/1e5).toFixed(2)} bar ${createEcoBadge(eco_badge_val)}`)}` : ''}
+                    ${createSectionHeader('7-Point Analysis', '📊')}
+                    ${createStateTable(statePoints)}
+                </div>
             `;
-            
-            if (isEcoEnabled) {
-                html += `
-                    ${createSectionHeader('Economizer', '⚡')}
-                    ${createDetailRow('补气状态', `${(P_eco_Pa/1e5).toFixed(2)} bar ${createEcoBadge(eco_badge_val)}`)}
-                    ${createDetailRow('补气流量', `${m_dot_inj.toFixed(4)} kg/s`)}
-                `;
-            }
-            html += `</div>`;
 
-            // Render to DOM
             renderToAllViews(html);
-            
-            // --- 3. Update Mobile Summary Handle (Live View) ---
-            updateMobileSummary(
-                'Est. Cooling', `${(Q_evap_W/1000).toFixed(1)} kW`, 
-                'COP', COP_R.toFixed(2)
-            );
-
-            // Reset Button & Print
+            updateMobileSummary('Cooling', `${(Q_evap_W/1000).toFixed(1)} kW`, 'COP', COP_R.toFixed(2));
             setButtonFresh2();
-            if(printButtonM2) {
-                printButtonM2.disabled = false;
-                printButtonM2.classList.remove('opacity-50', 'cursor-not-allowed');
-            }
+            if(printButtonM2) printButtonM2.disabled = false;
+
+            lastCalculationData = { fluid, statePoints, COP_R, COP_H, Q_evap_W, Q_cond_W, Q_oil_W };
 
         } catch (error) {
-            const errorHtml = createErrorCard(error.message);
-            renderToAllViews(errorHtml);
+            renderToAllViews(createErrorCard(error.message));
             console.error(error);
             if(printButtonM2) printButtonM2.disabled = true;
         }
     }, 50);
 }
 
-// Print Handler
-function printReportMode2() {
-    if (!lastCalculationData) return;
-    const d = lastCalculationData;
-    const container = document.getElementById('print-container');
-    const table = container.querySelector('.print-table');
-    const resultDiv = container.querySelector('.print-results');
-    
-    table.innerHTML = '';
-    const rows = [
-        ['Mode', 'Refrigeration / Heat Pump'],
-        ['Fluid', d.fluid],
-        ['Te / Tc', `${d.Te_C} / ${d.Tc_C} °C`],
-        ['Cooling Cap', `${(d.Q_evap_W/1000).toFixed(3)} kW`],
-        ['Heating Cap', `${((d.Q_cond_W+d.Q_oil_W)/1000).toFixed(3)} kW`],
-        ['COP (C/H)', `${d.COP_R.toFixed(2)} / ${d.COP_H.toFixed(2)}`]
-    ];
-    rows.forEach(r => table.innerHTML += `<tr class="border-b"><th class="py-2 text-left">${r[0]}</th><td class="py-2 font-mono">${r[1]}</td></tr>`);
-    
-    resultDiv.innerText = `Full report generated at ${new Date().toLocaleString()}`;
-    window.print();
-}
-
-export function triggerMode2EfficiencyUpdate() {
-    if (autoEffCheckboxM2 && autoEffCheckboxM2.checked) updateAndDisplayEfficienciesM2();
-}
-
 export function initMode2(CP) {
     CP_INSTANCE = CP;
-    
-    // UI Refs
     calcButtonM2 = document.getElementById('calc-button-mode-2');
     calcFormM2 = document.getElementById('calc-form-mode-2');
     printButtonM2 = document.getElementById('print-button-mode-2');
     fluidSelectM2 = document.getElementById('fluid_m2');
     fluidInfoDivM2 = document.getElementById('fluid-info-m2');
     tempDischargeActualM2 = document.getElementById('temp_discharge_actual_m2');
-    
-    // New UI Targets (Desktop Panel & Mobile Bottom Sheet)
     resultsDesktopM2 = document.getElementById('results-desktop-m2');
     resultsMobileM2 = document.getElementById('mobile-results-m2');
     summaryMobileM2 = document.getElementById('mobile-summary-m2');
-    
-    // Inputs
     autoEffCheckboxM2 = document.getElementById('auto-eff-m2');
     tempEvapM2 = document.getElementById('temp_evap_m2');
     tempCondM2 = document.getElementById('temp_cond_m2');
     etaVM2 = document.getElementById('eta_v_m2');
     etaSM2 = document.getElementById('eta_s_m2');
-    
-    // ECO
     ecoCheckbox = document.getElementById('enable_eco_m2');
     ecoSatTempInput = document.getElementById('temp_eco_sat_m2');
     ecoSuperheatInput = document.getElementById('eco_superheat_m2');
 
     if (calcFormM2) {
         calcFormM2.addEventListener('submit', (e) => { e.preventDefault(); calculateMode2(); });
-        
         calcFormM2.querySelectorAll('input, select').forEach(input => {
             input.addEventListener('input', setButtonStale2);
             input.addEventListener('change', setButtonStale2);
         });
-
         fluidSelectM2.addEventListener('change', () => updateFluidInfo(fluidSelectM2, fluidInfoDivM2, CP_INSTANCE));
         
+        // Use the safe top-level function
         [tempEvapM2, tempCondM2, autoEffCheckboxM2].forEach(el => {
             if(el) el.addEventListener('change', updateAndDisplayEfficienciesM2);
         });
-
+        
         if (printButtonM2) printButtonM2.addEventListener('click', printReportMode2);
     }
-    console.log("Mode 2 (Cockpit UI) initialized.");
+    console.log("Mode 2 (Scope Fixed) initialized.");
+}
+
+function printReportMode2() {
+    if (!lastCalculationData) return;
+    const d = lastCalculationData;
+    const resultDiv = document.querySelector('.print-results');
+    let tableText = "\n\n7-Point Analysis:\n----------------------------------------\nPoint\tT(C)\tP(bar)\th(kJ)\tm(kg/s)\n";
+    d.statePoints.forEach(p => { tableText += `${p.name}\t${p.temp}\t${p.press}\t${p.enth}\t${p.flow}\n`; });
+    resultDiv.innerText = `Full report generated at ${new Date().toLocaleString()}` + tableText;
+    window.print();
+}
+export function triggerMode2EfficiencyUpdate() {
+    if (autoEffCheckboxM2 && autoEffCheckboxM2.checked) updateAndDisplayEfficienciesM2();
 }

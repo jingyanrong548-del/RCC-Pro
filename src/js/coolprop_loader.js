@@ -1,53 +1,54 @@
 // =====================================================================
-// coolprop_loader.js: CoolProp 物性库加载器
-// 版本: v4.6 (路径修复版)
-// 职责: 1. 异步加载 CoolProp WASM 模块
-//        2. (v4.6 修复) 明确提供 locateFile 路径，解决嵌套导入问题
+// coolprop_loader.js: CoolProp 物性库加载器 (v4.8 Stable)
+// 职责: 1. 强健的 WASM 路径解析 2. 流体基本信息查询与 UI 更新
 // =====================================================================
 
-// 导入 CoolProp JS 包装器
 import Module from './coolprop.js';
 
-// 1. 异步加载函数
 /**
- * 异步加载 CoolProp WASM 模块.
- * @returns {Promise<object>} 返回 CoolProp (CP) 实例.
+ * 异步加载 CoolProp WASM 模块
  */
 export async function loadCoolProp() {
     try {
-        // ====================== 关键修复 (v4.6) ======================
-        // 当 coolprop.js 被嵌套导入时, 其内部的 import.meta.url 会失效。
-        // 我们必须创建一个配置对象 (moduleArgs)，并使用 locateFile
-        // 明确告诉它 .wasm 文件在哪里（路径相对于 index.html）。
+        console.log("[CoolProp] Starting load sequence...");
+        
+        // 1. 获取当前的基础路径 (从 Vite 环境变量中读取)
+        // 兼容处理：确保 base 以 '/' 结尾
+        let baseUrl = import.meta.env.BASE_URL;
+        if (!baseUrl.endsWith('/')) baseUrl += '/';
 
+        console.log(`[CoolProp] Environment Base URL: ${baseUrl}`);
+
+        // 2. 配置 Module 加载参数
         const moduleArgs = {
             locateFile: (path, scriptDirectory) => {
                 if (path.endsWith('.wasm')) {
-                    // 核心修改：使用 import.meta.env.BASE_URL 获取当前的基础路径
-                    // 这样无论是本地开发还是 GitHub Pages，都能找到正确的地址
-                    return import.meta.env.BASE_URL + 'coolprop.wasm';
+                    // 强制指定 wasm 文件的完整绝对路径
+                    // 注意：coolprop.wasm 必须位于项目的 public/ 根目录下
+                    // 构建后它会位于 dist/coolprop.wasm
+                    const fullPath = `${baseUrl}coolprop.wasm`;
+                    console.log(`[CoolProp] Requesting WASM at: ${fullPath}`);
+                    return fullPath;
                 }
                 return scriptDirectory + path;
             }
         };
-        // ===========================================================
 
-        // 将配置对象传递给 Module 工厂函数
+        // 3. 初始化模块
         const CP = await Module(moduleArgs);
-
+        console.log("[CoolProp] WASM initialized successfully.");
         return CP;
 
     } catch (err) {
-        console.error("CoolProp WASM 加载失败:", err);
-        // 将错误抛出，由 main.js 捕获
-        throw new Error(`CoolProp.js 或 CoolProp.wasm 加载失败。 (${err.message})`);
+        console.error("[CoolProp] Critical Loading Error:", err);
+        throw new Error(`CoolProp 加载失败。\n请检查:\n1. public 目录下是否有 coolprop.wasm\n2. vite.config.js 的 base 路径是否匹配 GitHub 仓库名。\n(${err.message})`);
     }
 }
 
 
-// 2. 公共的流体信息更新函数
-// (此部分与您原文件 v4.5 保持一致)
-
+// ---------------------------------------------------------------------
+// 流体基础数据 (GWP, ODP, 安全等级)
+// ---------------------------------------------------------------------
 const fluidInfoData = {
     'R134a': { gwp: 1430, odp: 0, safety: 'A1' },
     'R245fa': { gwp: 1030, odp: 0, safety: 'B1' },
@@ -67,13 +68,11 @@ const fluidInfoData = {
     'R152a': { gwp: 124, odp: 0, safety: 'A2' },
     'R454B': { gwp: 466, odp: 0, safety: 'A2L' },
     'R513A': { gwp: 631, odp: 0, safety: 'A1' },
-
     'R236fa': { gwp: 9810, odp: 0, safety: 'A1' },
     'R23': { gwp: 14800, odp: 0, safety: 'A1' },
     'R1234yf': { gwp: '<1', odp: 0, safety: 'A2L' },
     'R1270': { gwp: 2, odp: 0, safety: 'A3' },
     'R1150': { gwp: 2, odp: 0, safety: 'A3' },
-
     'Air': { gwp: 0, odp: 0, safety: 'A1' },
     'Nitrogen': { gwp: 0, odp: 0, safety: 'A1' },
     'Helium': { gwp: 0, odp: 0, safety: 'A1' },
@@ -83,19 +82,18 @@ const fluidInfoData = {
     'Hydrogen': { gwp: 0, odp: 0, safety: 'A3' },
     'Oxygen': { gwp: 0, odp: 0, safety: 'A1 (Oxidizer)' },
     'Methane': { gwp: 25, odp: 0, safety: 'A3' },
-
     'default': { gwp: 'N/A', odp: 'N/A', safety: 'N/A' }
 };
 
 /**
- * 更新流体信息框
- * @param {HTMLSelectElement} selectElement - 下拉菜单元素
- * @param {HTMLPreElement} infoElement - <pre> 元素
+ * 更新 UI 中的流体信息显示
+ * @param {HTMLSelectElement} selectElement - 下拉菜单 DOM
+ * @param {HTMLElement} infoElement - 显示信息的 DOM
  * @param {object} CP - CoolProp 实例
  */
 export function updateFluidInfo(selectElement, infoElement, CP) {
     if (!CP) {
-        infoElement.textContent = "--- 物性库尚未加载 ---";
+        infoElement.innerHTML = `<span class="text-red-400">Wait: Library Loading...</span>`;
         return;
     }
 
@@ -103,55 +101,39 @@ export function updateFluidInfo(selectElement, infoElement, CP) {
     const info = fluidInfoData[fluid] || fluidInfoData['default'];
 
     try {
-        if (fluid === 'Water' && (selectElement.id === 'fluid_m3' || selectElement.id === 'fluid_m4')) {
+        // 特殊处理水 (IF97)
+        if (fluid === 'Water') {
             infoElement.innerHTML = `
-<b>IAPWS-IF97 (Water)</b>
-----------------------------------------
-GWP: 0, ODP: 0, Safety: A1
-MVR 模式固定使用水工质。
-----------------------------------------
-临界温度 (Tc): 647.096 K (373.946 °C)
-临界压力 (Pc): 220.64 bar
-标准沸点 (Tb): 373.124 K (99.974 °C)
-            `.trim();
+                <div class="flex justify-between items-center text-[10px] md:text-xs text-gray-500 font-mono">
+                    <span class="font-bold text-gray-700">Water (IF97)</span>
+                    <span>Safe: A1</span>
+                    <span>Tc: 647.1K / Pc: 220.6bar</span>
+                </div>`;
             return;
         }
 
+        // 调用 CoolProp 获取临界参数
+        // 注意：部分流体可能没有定义的临界参数，需 try-catch
         const Tcrit_K = CP.PropsSI('Tcrit', '', 0, '', 0, fluid);
         const Pcrit_Pa = CP.PropsSI('Pcrit', '', 0, '', 0, fluid);
-        const Tboil_K = CP.PropsSI('T', 'P', 101325, 'Q', 0, fluid);
 
+        // 生成紧凑的 HTML (适配 UI 3.0 Card Header)
         infoElement.innerHTML = `
-<b>${fluid} 关键参数:</b>
-----------------------------------------
-GWP (AR4/AR5): ${info.gwp}
-ODP:           ${info.odp}
-安全级别:      ${info.safety} (毒性[A/B] / 可燃性[1/2L/2/3])
-----------------------------------------
-临界温度 (Tc): ${Tcrit_K.toFixed(2)} K (${(Tcrit_K - 273.15).toFixed(2)} °C)
-临界压力 (Pc): ${(Pcrit_Pa / 1e5).toFixed(2)} bar
-标准沸点 (Tb): ${Tboil_K.toFixed(2)} K (${(Tboil_K - 273.15).toFixed(2)} °C)
-        `.trim();
+            <div class="flex justify-between items-center text-[10px] md:text-xs text-gray-500 font-mono">
+                <span><b class="text-gray-700">${fluid}</b> (${info.safety})</span>
+                <span class="hidden sm:inline">GWP: ${info.gwp}</span>
+                <span>Tc: ${(Tcrit_K - 273.15).toFixed(1)}°C / Pc: ${(Pcrit_Pa / 1e5).toFixed(1)} bar</span>
+            </div>
+        `;
 
     } catch (err) {
-        console.error(`Update Fluid Info Failed for ${fluid}:`, err);
-        if (err.message.includes("sublimation") && fluid === 'R744') {
-            const Tcrit_K = CP.PropsSI('Tcrit', '', 0, '', 0, fluid);
-            const Pcrit_Pa = CP.PropsSI('Pcrit', '', 0, '', 0, fluid);
-
-            infoElement.innerHTML = `
-<b>${fluid} 关键参数:</b>
-----------------------------------------
-GWP (AR4/AR5): ${info.gwp}
-ODP:           ${info.odp}
-安全级别:      ${info.safety}
-----------------------------------------
-临界温度 (Tc): ${Tcrit_K.toFixed(2)} K (${(Tcrit_K - 273.15).toFixed(2)} °C)
-临界压力 (Pc): ${(Pcrit_Pa / 1e5).toFixed(2)} bar
-标准沸点 (Tb): N/A (Sublimes at 1 atm)
-            `.trim();
-        } else {
-            infoElement.textContent = `--- 无法加载 ${fluid} 的物性。 ---\n${err.message}`;
-        }
+        console.warn(`[CoolProp] Info update warning for ${fluid}:`, err);
+        infoElement.innerHTML = `
+            <div class="flex justify-between items-center text-[10px] md:text-xs text-gray-500 font-mono">
+                <span><b>${fluid}</b> (${info.safety})</span>
+                <span>GWP: ${info.gwp}</span>
+                <span class="text-orange-400">Props unavailable</span>
+            </div>
+        `;
     }
 }

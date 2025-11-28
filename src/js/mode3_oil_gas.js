@@ -1,6 +1,6 @@
 // =====================================================================
-// mode3_oil_gas.js: 模式二 (气体压缩) - UI 3.0 Cockpit Edition
-// 职责: 执行气体压缩计算 -> 双向渲染 -> 更新移动端摘要栏
+// mode3_oil_gas.js: 模式二 (气体压缩) - v3.3 Table Adapter
+// 职责: 计算 -> 生成带流量的状态表 -> 绘制过程图 -> 双向渲染
 // =====================================================================
 
 import { updateFluidInfo } from './coolprop_loader.js';
@@ -9,15 +9,17 @@ import {
     createKpiCard, 
     createDetailRow, 
     createSectionHeader, 
-    createErrorCard 
+    createErrorCard,
+    createStateTable 
 } from './components.js';
+import { drawPHDiagram } from './charts.js';
 
 let CP_INSTANCE = null;
 let lastCalculationData = null; 
 
 // UI References
 let calcButtonM3, calcFormM3, printButtonM3, fluidSelectM3, fluidInfoDivM3;
-let resultsDesktopM3, resultsMobileM3, summaryMobileM3; // New UI Targets
+let resultsDesktopM3, resultsMobileM3, summaryMobileM3;
 let allInputsM3, tempDischargeActualM3;
 let autoEffCheckboxM3, pressInM3, pressOutM3, etaVM3, etaIsoM3;
 
@@ -43,13 +45,13 @@ function setButtonFresh3() {
     }
 }
 
-// 辅助函数：同时渲染内容到 PC 和 移动端容器
+// 辅助函数：双向渲染 HTML
 function renderToAllViews(htmlContent) {
     if(resultsDesktopM3) resultsDesktopM3.innerHTML = htmlContent;
     if(resultsMobileM3) resultsMobileM3.innerHTML = htmlContent;
 }
 
-// 辅助函数：更新移动端底部把手的摘要信息
+// 辅助函数：更新移动端摘要
 function updateMobileSummary(powerValue, effLabel, effValue) {
     if (!summaryMobileM3) return;
     summaryMobileM3.innerHTML = `
@@ -91,8 +93,12 @@ function updateAndDisplayEfficienciesM3() {
 // =====================================================================
 function calculateMode3() {
     // 1. Loading State
-    const loadingHtml = '<div class="flex justify-center p-10"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>';
-    renderToAllViews(loadingHtml);
+    renderToAllViews('<div class="flex justify-center p-10"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>');
+    
+    ['chart-desktop-m3', 'chart-mobile-m3'].forEach(id => {
+        const el = document.getElementById(id);
+        if(el) el.classList.add('hidden');
+    });
 
     setTimeout(() => {
         try {
@@ -169,14 +175,40 @@ function calculateMode3() {
 
             if (Q_oil_W < 0) throw new Error(`Negative Oil Load (${(Q_oil_W/1000).toFixed(2)} kW). Check efficiency or temps.`);
 
-            // Cache for Print
-            lastCalculationData = {
-                fluid, Pe_bar, Pc_bar, m_dot: m_dot_act, 
-                W_shaft_W, W_input_W, Q_gas_heat_W, Q_oil_W,
-                eta_iso_shaft, eta_s_shaft, Te_C, T_2a_C: T_2a_actual_C
-            };
+            // --- 2. Visualization (P-h Process) ---
+            const p1 = [h_1 / 1000, Pe_bar];
+            const p2 = [h_2a_act / 1000, Pc_bar];
+            const mainPoints = [p1, p2];
 
-            // --- 2. Render Dashboard ---
+            // Draw Charts
+            ['chart-desktop-m3', 'chart-mobile-m3'].forEach(id => {
+                drawPHDiagram(id, {
+                    title: `Compression Process (${fluid})`,
+                    mainPoints: mainPoints,
+                    xLabel: 'Enthalpy (kJ/kg)',
+                    yLabel: 'Pressure (bar)'
+                });
+            });
+
+            // --- 3. Render Dashboard ---
+            // Build State Points Data (Including Flow)
+            const statePoints = [
+                { 
+                    name: '1', desc: 'Inlet', 
+                    temp: Te_C.toFixed(1), 
+                    press: Pe_bar.toFixed(2), 
+                    enth: (h_1/1000).toFixed(1),
+                    flow: m_dot_act.toFixed(4) // Mass Flow
+                },
+                { 
+                    name: '2', desc: 'Discharge', 
+                    temp: T_2a_actual_C.toFixed(1), 
+                    press: Pc_bar.toFixed(2), 
+                    enth: (h_2a_act/1000).toFixed(1),
+                    flow: m_dot_act.toFixed(4) // Mass Flow (Same for open cycle)
+                }
+            ];
+
             const html = `
                 <div class="grid grid-cols-2 gap-4 mb-6">
                     ${createKpiCard('轴功率 (Shaft)', (W_shaft_W/1000).toFixed(2), 'kW', `In: ${(W_input_W/1000).toFixed(2)}`, 'blue')}
@@ -184,12 +216,6 @@ function calculateMode3() {
                 </div>
 
                 <div class="space-y-1 bg-white/40 p-4 rounded-2xl border border-white/50 shadow-inner">
-                    ${createSectionHeader('Flow & Pressure')}
-                    ${createDetailRow('实际流量 (Mass)', `${m_dot_act.toFixed(4)} kg/s`)}
-                    ${createDetailRow('吸气 (Inlet)', `${Pe_bar.toFixed(2)} bar / ${Te_C.toFixed(1)}°C`)}
-                    ${createDetailRow('排气 (Discharge)', `${Pc_bar.toFixed(2)} bar / ${T_2a_actual_C.toFixed(1)}°C`)}
-                    ${createDetailRow('压比 (PR)', (Pc_bar/Pe_bar).toFixed(2))}
-
                     ${createSectionHeader('Efficiencies (Shaft)')}
                     ${createDetailRow('等温效率 (η_iso)', eta_iso_shaft.toFixed(3), efficiency_type === 'isothermal')}
                     ${createDetailRow('等熵效率 (η_s)', eta_s_shaft.toFixed(3), efficiency_type === 'isentropic')}
@@ -198,13 +224,15 @@ function calculateMode3() {
                     ${createSectionHeader('Work & Heat', '🔥')}
                     ${createDetailRow('理论等温功', `${(W_iso_W/1000).toFixed(2)} kW`)}
                     ${createDetailRow('气体温升吸热', `${(Q_gas_heat_W/1000).toFixed(2)} kW`)}
+
+                    ${createSectionHeader('State Points Detail', '📊')}
+                    ${createStateTable(statePoints)}
                 </div>
             `;
 
             renderToAllViews(html);
 
-            // --- 3. Update Mobile Summary ---
-            // Display Shaft Power & The selected efficiency type
+            // Update Summary Handle
             const mainEffLabel = efficiency_type === 'isothermal' ? 'Iso-Eff' : 'Isen-Eff';
             const mainEffValue = efficiency_type === 'isothermal' ? eta_iso_shaft.toFixed(3) : eta_s_shaft.toFixed(3);
             
@@ -220,6 +248,13 @@ function calculateMode3() {
                 printButtonM3.classList.remove('opacity-50', 'cursor-not-allowed');
             }
 
+            // Cache for Print
+            lastCalculationData = {
+                fluid, Pe_bar, Pc_bar, m_dot: m_dot_act, 
+                W_shaft_W, W_input_W, Q_gas_heat_W, Q_oil_W,
+                eta_iso_shaft, eta_s_shaft, statePoints
+            };
+
         } catch (error) {
             renderToAllViews(createErrorCard(error.message));
             console.error(error);
@@ -228,7 +263,7 @@ function calculateMode3() {
     }, 50);
 }
 
-// Print
+// Print Handler
 function printReportMode3() {
     if (!lastCalculationData) return;
     const d = lastCalculationData;
@@ -248,7 +283,13 @@ function printReportMode3() {
     ];
     rows.forEach(r => table.innerHTML += `<tr class="border-b"><th class="py-2 text-left">${r[0]}</th><td class="py-2 font-mono">${r[1]}</td></tr>`);
 
-    resultDiv.innerText = `Heat Balance:\nOil Load: ${(d.Q_oil_W/1000).toFixed(3)} kW\nGas Heat Gain: ${(d.Q_gas_heat_W/1000).toFixed(3)} kW`;
+    let tableText = "\n\nState Points:\n--------------------\nPoint\tT(C)\tP(bar)\th(kJ)\tm(kg/s)\n";
+    d.statePoints.forEach(p => { 
+        tableText += `${p.name}\t${p.temp}\t${p.press}\t${p.enth}\t${p.flow}\n`; 
+    });
+
+    resultDiv.innerText = `Heat Balance Report:\nOil Load: ${(d.Q_oil_W/1000).toFixed(3)} kW\nGas Heat Gain: ${(d.Q_gas_heat_W/1000).toFixed(3)} kW` + tableText;
+
     window.print();
 }
 
@@ -259,7 +300,6 @@ export function triggerMode3EfficiencyUpdate() {
 export function initMode3(CP) {
     CP_INSTANCE = CP;
     
-    // UI Refs
     calcButtonM3 = document.getElementById('calc-button-mode-3');
     calcFormM3 = document.getElementById('calc-form-mode-3');
     printButtonM3 = document.getElementById('print-button-mode-3');
@@ -267,12 +307,11 @@ export function initMode3(CP) {
     fluidInfoDivM3 = document.getElementById('fluid-info-m3');
     tempDischargeActualM3 = document.getElementById('temp_discharge_actual_m3');
     
-    // New UI Targets
+    // UI Targets
     resultsDesktopM3 = document.getElementById('results-desktop-m3');
     resultsMobileM3 = document.getElementById('mobile-results-m3');
     summaryMobileM3 = document.getElementById('mobile-summary-m3');
 
-    // Inputs
     autoEffCheckboxM3 = document.getElementById('auto-eff-m3');
     pressInM3 = document.getElementById('press_in_m3');
     pressOutM3 = document.getElementById('press_out_m3');
@@ -290,7 +329,6 @@ export function initMode3(CP) {
 
         fluidSelectM3.addEventListener('change', () => updateFluidInfo(fluidSelectM3, fluidInfoDivM3, CP_INSTANCE));
 
-        // Auto Eff Listeners
         [pressInM3, pressOutM3, autoEffCheckboxM3].forEach(input => {
             if(input) input.addEventListener('change', updateAndDisplayEfficienciesM3);
         });
@@ -301,5 +339,5 @@ export function initMode3(CP) {
         
         if (printButtonM3) printButtonM3.addEventListener('click', printReportMode3);
     }
-    console.log("Mode 3 (Cockpit UI) initialized.");
+    console.log("Mode 3 (Visualized Fix) initialized.");
 }
