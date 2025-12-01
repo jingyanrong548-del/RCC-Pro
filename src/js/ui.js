@@ -1,15 +1,17 @@
 // =====================================================================
-// ui.js: UI 交互逻辑 (v3.5 Mobile Fix)
-// 职责: 修复移动端抽屉打开时图表不显示的问题 (Resize Trigger)
+// ui.js: UI 交互逻辑 (v4.0 Smart Suggestion)
+// 职责: 增加手动模式下的“智能推荐值”填充功能
 // =====================================================================
 
 import { HistoryDB } from './storage.js';
-import { resizeAllCharts } from './charts.js'; // [New] 引入图表重绘
+import { resizeAllCharts } from './charts.js';
 
 export function initUI() {
-    console.log("🚀 UI Initializing...");
+    console.log("🚀 UI Initializing (v4.0)...");
 
-    // --- 1. History Drawer Logic ---
+    // -----------------------------------------------------------------
+    // 1. History Drawer Logic
+    // -----------------------------------------------------------------
     const historyBtn = document.getElementById('history-btn');
     const historyDrawer = document.getElementById('history-drawer');
     const historyCloseBtn = document.getElementById('history-close-btn');
@@ -76,7 +78,9 @@ export function initUI() {
         });
     }
 
-    // --- 2. Tab & Restore Logic ---
+    // -----------------------------------------------------------------
+    // 2. Tab & Restore Logic
+    // -----------------------------------------------------------------
     const tabs = [
         { btnId: 'tab-btn-m2', contentId: 'tab-content-m2', sheetId: 'mobile-sheet-m2', calcBtnId: 'calc-button-mode-2' },
         { btnId: 'tab-btn-m3', contentId: 'tab-content-m3', sheetId: 'mobile-sheet-m3', calcBtnId: 'calc-button-mode-3' }
@@ -120,11 +124,16 @@ export function initUI() {
                     radios.forEach(r => { if(r.value === inputs[k]) { r.checked=true; r.dispatchEvent(new Event('change')); }});
                 }
             });
-            setTimeout(() => document.getElementById(tabs[idx].calcBtnId).click(), 100);
+            setTimeout(() => {
+                const btn = document.getElementById(tabs[idx].calcBtnId);
+                if(btn) btn.click();
+            }, 100);
         }
     }
 
-    // --- 3. Mobile Sheet Logic (Updated) ---
+    // -----------------------------------------------------------------
+    // 3. Mobile Sheet Logic
+    // -----------------------------------------------------------------
     function setupBottomSheet(sId, hId, cId) {
         const s = document.getElementById(sId), h = document.getElementById(hId), c = document.getElementById(cId);
         if(!s || !h) return;
@@ -133,18 +142,12 @@ export function initUI() {
         
         const toggle = (force) => {
             isExpanded = force !== undefined ? force : !isExpanded;
-            
             s.classList.toggle('translate-y-0', isExpanded);
             s.classList.toggle('translate-y-[calc(100%-80px)]', !isExpanded);
             s.classList.toggle('shadow-2xl', isExpanded);
 
-            // [New] 当抽屉打开时，稍微延迟触发图表重绘
-            // 否则图表在隐藏状态下尺寸为0，打开后是空白的
             if (isExpanded) {
-                setTimeout(() => {
-                    console.log("Triggering chart resize for mobile...");
-                    resizeAllCharts();
-                }, 350); // 等动画大概跑完
+                setTimeout(() => { resizeAllCharts(); }, 350);
             }
         };
 
@@ -154,38 +157,76 @@ export function initUI() {
     setupBottomSheet('mobile-sheet-m2', 'sheet-handle-m2', 'mobile-close-m2');
     setupBottomSheet('mobile-sheet-m3', 'sheet-handle-m3', 'mobile-close-m3');
 
-    // --- 4. Inputs Setup ---
+    // -----------------------------------------------------------------
+    // 4. Inputs Setup & Mode Logic
+    // -----------------------------------------------------------------
     function setupRadioToggle(name, cb) {
         document.querySelectorAll(`input[name="${name}"]`).forEach(r => r.addEventListener('change', () => { if(r.checked) cb(r.value); }));
         const c = document.querySelector(`input[name="${name}"]:checked`); if(c) cb(c.value);
     }
     
-    // M2
+    // Mode 2: Refrigeration
     setupRadioToggle('flow_mode_m2', v => {
         document.getElementById('rpm-inputs-m2').style.display = v==='rpm'?'grid':'none';
         document.getElementById('vol-inputs-m2').style.display = v==='vol'?'block':'none';
     });
+    
     const ecoCb = document.getElementById('enable_eco_m2');
     if(ecoCb) ecoCb.addEventListener('change', () => {
         document.getElementById('eco-settings-m2').classList.toggle('hidden', !ecoCb.checked);
         document.getElementById('eco-placeholder-m2').classList.toggle('hidden', ecoCb.checked);
     });
-    setupRadioToggle('eco_type_m2', v => document.getElementById('eco-subcooler-inputs-m2').classList.toggle('hidden', v!=='subcooler'));
+    
+    setupRadioToggle('eco_type_m2', v => {
+        const subcoolerInputs = document.getElementById('eco-subcooler-inputs-m2');
+        if(subcoolerInputs) {
+            subcoolerInputs.classList.toggle('hidden', v !== 'subcooler');
+        }
+    });
+
+    // [Update] Smart Suggestion for Manual ECO Pressure
     setupRadioToggle('eco_press_mode_m2', v => {
         const e = document.getElementById('temp_eco_sat_m2');
-        e.disabled = v==='auto'; e.classList.toggle('opacity-50', v==='auto'); if(v==='auto') e.value='';
+        if (!e) return;
+        
+        if (v === 'auto') {
+            e.disabled = true; 
+            e.value = ''; 
+            e.placeholder = 'Auto';
+            e.classList.add('opacity-50', 'bg-gray-100/50');
+        } else {
+            e.disabled = false; 
+            e.classList.remove('opacity-50', 'bg-gray-100/50');
+            
+            // 智能推荐逻辑: 如果输入框为空，计算几何平均温度推荐值
+            if (e.value === '') {
+                const Te = parseFloat(document.getElementById('temp_evap_m2').value) || 0;
+                const Tc = parseFloat(document.getElementById('temp_cond_m2').value) || 40;
+                
+                // 计算开尔文下的几何平均，再转回摄氏度
+                // T_mid = sqrt(T_evap_K * T_cond_K)
+                const Te_K = Te + 273.15;
+                const Tc_K = Tc + 273.15;
+                const T_rec = Math.sqrt(Te_K * Tc_K) - 273.15;
+                
+                e.value = T_rec.toFixed(1); // 填入推荐值
+            }
+            e.placeholder = 'e.g. ' + e.value;
+        }
     });
+
     setupRadioToggle('eff_mode_m2', v => {
         document.getElementById('motor-eff-group-m2').style.display = v==='input'?'block':'none';
         document.getElementById('eta_s_label_m2').textContent = v==='input'?'总等熵效率':'等熵效率';
     });
     
-    // M3
+    // Mode 3: Gas
     setupRadioToggle('flow_mode_m3', v => {
         document.getElementById('rpm-inputs-m3').style.display = v==='rpm'?'grid':'none';
         document.getElementById('vol-inputs-m3').style.display = v==='vol'?'block':'none';
     });
 
+    // Auto Lock Helpers
     const setupLock = (id, ids) => {
         const b = document.getElementById(id);
         if(!b) return;
@@ -197,11 +238,12 @@ export function initUI() {
     setupLock('auto-eff-m2', ['eta_s_m2', 'eta_v_m2']);
     setupLock('auto-eff-m3', ['eta_iso_m3', 'eta_v_m3']);
 
+    // Global Buttons
     document.querySelectorAll('button').forEach(btn => {
         btn.addEventListener('mousedown', () => btn.classList.add('scale-[0.98]'));
         btn.addEventListener('mouseup', () => btn.classList.remove('scale-[0.98]'));
         btn.addEventListener('mouseleave', () => btn.classList.remove('scale-[0.98]'));
     });
 
-    console.log("✅ UI v3.5 Initialized.");
+    console.log("✅ UI v4.0 Initialized.");
 }
