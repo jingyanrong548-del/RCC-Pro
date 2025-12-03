@@ -2,9 +2,7 @@ import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(({ command }) => {
-  // 判断是本地开发还是生产构建
   const isProduction = command === 'build';
-
   return {
     // -------------------------------------------------------------------------
     // 1. 部署路径配置 (GitHub Pages 关键设置)
