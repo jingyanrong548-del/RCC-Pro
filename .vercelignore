@@ -1,0 +1,23 @@
+# .vercelignore
+# 排除不需要部署到 Vercel 的文件
+
+# GitHub Actions 工作流文件
+.github/
+
+# 开发环境文件
+.env.local
+.env.development
+
+# 测试文件（如果有）
+*.test.js
+*.spec.js
+__tests__/
+
+# 文档文件（可选）
+README.md
+*.md
+
+# 其他不需要的文件
+.DS_Store
+*.log
+

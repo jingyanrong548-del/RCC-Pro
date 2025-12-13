@@ -41,7 +41,7 @@ export async function loadCoolProp() {
 
     } catch (err) {
         console.error("[CoolProp] Critical Loading Error:", err);
-        throw new Error(`CoolProp 加载失败。\n请检查:\n1. public 目录下是否有 coolprop.wasm\n2. vite.config.js 的 base 路径是否匹配 GitHub 仓库名。\n(${err.message})`);
+        throw new Error(`CoolProp 加载失败。\n请检查:\n1. public 目录下是否有 coolprop.wasm\n2. 网络连接是否正常\n3. 如果问题持续，请清除浏览器缓存后重试\n(${err.message})`);
     }
 }
 

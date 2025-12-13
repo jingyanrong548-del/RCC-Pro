@@ -5,10 +5,10 @@ export default defineConfig(({ command }) => {
   const isProduction = command === 'build';
   return {
     // -------------------------------------------------------------------------
-    // 1. 部署路径配置 (GitHub Pages 关键设置)
-    // ⚠️ 请确保 '/Oil-injected-Compressor-Calculator-pro/' 与您的 GitHub 仓库名称完全一致
+    // 1. 部署路径配置 (Vercel 部署)
+    // Vercel 使用根路径，不需要子路径前缀
     // -------------------------------------------------------------------------
-    base: isProduction ? '/Oil-injected-Compressor-Calculator-pro/' : '/',
+    base: '/',
 
     plugins: [
       VitePWA({
@@ -42,7 +42,24 @@ export default defineConfig(({ command }) => {
         workbox: {
           // 允许缓存大文件 (CoolProp.wasm 约为 6MB+)
           maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
-          cleanupOutdatedCaches: true
+          cleanupOutdatedCaches: true,
+          // 优化 WASM 文件缓存策略：优先缓存，长期有效
+          runtimeCaching: [
+            {
+              urlPattern: /\.wasm$/,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'coolprop-wasm-cache',
+                expiration: {
+                  maxEntries: 1,
+                  maxAgeSeconds: 60 * 60 * 24 * 365 // 1年
+                },
+                cacheableResponse: {
+                  statuses: [0, 200]
+                }
+              }
+            }
+          ]
         }
       })
     ],
