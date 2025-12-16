@@ -85,6 +85,50 @@
                                 </div>
 
                                 <div id="geometry-input-panel" class="space-y-5 animate-fade-in">
+                                    <div class="bg-blue-50/50 rounded-xl p-4 border border-blue-100/50">
+                                        <div class="flex items-center gap-2 mb-3">
+                                            <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+                                            <label class="text-xs font-bold text-blue-700">压缩机型号选择</label>
+                                        </div>
+                                        <div class="grid grid-cols-3 gap-3">
+                                            <div>
+                                                <label class="block text-[10px] text-gray-500 mb-1 ml-1">品牌</label>
+                                                <div class="relative">
+                                                    <select id="compressor_brand_m2" class="block w-full appearance-none bg-white border-0 rounded-lg py-2 px-3 text-xs text-gray-900 font-medium ring-1 ring-blue-100 focus:ring-2 focus:ring-blue-500 transition-all">
+                                                        <option value="">-- 选择品牌 --</option>
+                                                    </select>
+                                                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
+                                                        <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label class="block text-[10px] text-gray-500 mb-1 ml-1">系列</label>
+                                                <div class="relative">
+                                                    <select id="compressor_series_m2" class="block w-full appearance-none bg-white border-0 rounded-lg py-2 px-3 text-xs text-gray-900 font-medium ring-1 ring-blue-100 focus:ring-2 focus:ring-blue-500 transition-all" disabled>
+                                                        <option value="">-- 选择系列 --</option>
+                                                    </select>
+                                                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
+                                                        <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label class="block text-[10px] text-gray-500 mb-1 ml-1">型号</label>
+                                                <div class="relative">
+                                                    <select id="compressor_model_m2" class="block w-full appearance-none bg-white border-0 rounded-lg py-2 px-3 text-xs text-gray-900 font-medium ring-1 ring-blue-100 focus:ring-2 focus:ring-blue-500 transition-all" disabled>
+                                                        <option value="">-- 选择型号 --</option>
+                                                    </select>
+                                                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
+                                                        <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div id="model_displacement_info_m2" class="mt-2 text-[10px] text-blue-600 font-mono px-1 hidden">
+                                            <span class="font-bold">理论排量:</span> <span id="model_displacement_value_m2">--</span> m³/h
+                                        </div>
+                                    </div>
                                     <div class="bg-gray-50/50 rounded-xl p-1 flex">
                                         <label class="flex-1 cursor-pointer">
                                             <input type="radio" name="flow_mode_m2" value="rpm" class="peer sr-only" checked>
@@ -509,6 +553,50 @@
                                     </label>
                                 </div>
 
+                                <div class="bg-blue-50/50 rounded-xl p-4 border border-blue-100/50 mb-5">
+                                    <div class="flex items-center gap-2 mb-3">
+                                        <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+                                        <label class="text-xs font-bold text-blue-700">压缩机型号选择</label>
+                                    </div>
+                                    <div class="grid grid-cols-3 gap-3">
+                                        <div>
+                                            <label class="block text-[10px] text-gray-500 mb-1 ml-1">品牌</label>
+                                            <div class="relative">
+                                                <select id="compressor_brand_m3" class="block w-full appearance-none bg-white border-0 rounded-lg py-2 px-3 text-xs text-gray-900 font-medium ring-1 ring-blue-100 focus:ring-2 focus:ring-blue-500 transition-all">
+                                                    <option value="">-- 选择品牌 --</option>
+                                                </select>
+                                                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
+                                                    <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label class="block text-[10px] text-gray-500 mb-1 ml-1">系列</label>
+                                            <div class="relative">
+                                                <select id="compressor_series_m3" class="block w-full appearance-none bg-white border-0 rounded-lg py-2 px-3 text-xs text-gray-900 font-medium ring-1 ring-blue-100 focus:ring-2 focus:ring-blue-500 transition-all" disabled>
+                                                    <option value="">-- 选择系列 --</option>
+                                                </select>
+                                                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
+                                                    <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label class="block text-[10px] text-gray-500 mb-1 ml-1">型号</label>
+                                            <div class="relative">
+                                                <select id="compressor_model_m3" class="block w-full appearance-none bg-white border-0 rounded-lg py-2 px-3 text-xs text-gray-900 font-medium ring-1 ring-blue-100 focus:ring-2 focus:ring-blue-500 transition-all" disabled>
+                                                    <option value="">-- 选择型号 --</option>
+                                                </select>
+                                                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
+                                                    <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div id="model_displacement_info_m3" class="mt-2 text-[10px] text-blue-600 font-mono px-1 hidden">
+                                        <span class="font-bold">理论排量:</span> <span id="model_displacement_value_m3">--</span> m³/h
+                                    </div>
+                                </div>
                                 <div id="rpm-inputs-m3" class="grid grid-cols-2 gap-4">
                                     <div>
                                         <label class="block text-xs text-gray-500 mb-1 ml-1">运行转速 (RPM)</label>

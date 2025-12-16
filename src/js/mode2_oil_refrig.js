@@ -21,6 +21,12 @@ import { drawPHDiagram } from './charts.js';
 import { HistoryDB, SessionState } from './storage.js';
 import { AppState } from './state.js'; 
 import { calculatePoly10, calculatePolyVSD } from './logic/polynomial_models.js';
+import { 
+    getAllBrands, 
+    getSeriesByBrand, 
+    getModelsBySeries, 
+    getDisplacementByModel 
+} from './compressor_models.js';
 
 let CP_INSTANCE = null;
 let lastCalculationData = null; 
@@ -32,6 +38,9 @@ let autoEffCheckboxM2, tempEvapM2, tempCondM2, etaVM2, etaSM2;
 let ecoCheckbox, ecoSatTempInput, ecoSuperheatInput, ecoDtInput, tempDischargeActualM2;
 let polyRefRpmInput, polyRefDispInput, vsdCheckboxM2, ratedRpmInputM2, polyCorrectionPanel;
 let slhxCheckbox, slhxEffInput;
+// Compressor Model Selectors
+let compressorBrandM2, compressorSeriesM2, compressorModelM2, modelDisplacementInfoM2, modelDisplacementValueM2;
+let flowM3hM2;
 
 // Button States
 const BTN_TEXT_CALCULATE = "Calculate Performance";
@@ -102,6 +111,115 @@ function updateAndDisplayEfficienciesM2() {
     } catch (error) {
         console.warn("Auto-Eff Error (Ignored):", error.message);
     }
+}
+
+// ---------------------------------------------------------------------
+// Compressor Model Selection Handlers
+// ---------------------------------------------------------------------
+
+function initCompressorModelSelectorsM2() {
+    // Populate brand dropdown
+    const brands = getAllBrands();
+    compressorBrandM2.innerHTML = '<option value="">-- 选择品牌 --</option>';
+    brands.forEach(brand => {
+        const option = document.createElement('option');
+        option.value = brand;
+        option.textContent = brand;
+        compressorBrandM2.appendChild(option);
+    });
+
+    // Brand change handler
+    compressorBrandM2.addEventListener('change', () => {
+        const brand = compressorBrandM2.value;
+        compressorSeriesM2.innerHTML = '<option value="">-- 选择系列 --</option>';
+        compressorModelM2.innerHTML = '<option value="">-- 选择型号 --</option>';
+        compressorSeriesM2.disabled = !brand;
+        compressorModelM2.disabled = true;
+        modelDisplacementInfoM2.classList.add('hidden');
+
+        if (brand) {
+            const series = getSeriesByBrand(brand);
+            series.forEach(s => {
+                const option = document.createElement('option');
+                option.value = s;
+                option.textContent = s;
+                compressorSeriesM2.appendChild(option);
+            });
+            compressorSeriesM2.disabled = false;
+        }
+    });
+
+    // Series change handler
+    compressorSeriesM2.addEventListener('change', () => {
+        const brand = compressorBrandM2.value;
+        const series = compressorSeriesM2.value;
+        compressorModelM2.innerHTML = '<option value="">-- 选择型号 --</option>';
+        compressorModelM2.disabled = !series;
+        modelDisplacementInfoM2.classList.add('hidden');
+
+        if (brand && series) {
+            const models = getModelsBySeries(brand, series);
+            models.forEach(m => {
+                const option = document.createElement('option');
+                option.value = m.model;
+                option.textContent = m.model;
+                compressorModelM2.appendChild(option);
+            });
+            compressorModelM2.disabled = false;
+        }
+    });
+
+    // Model change handler - Auto-fill displacement and switch to volume mode
+    compressorModelM2.addEventListener('change', () => {
+        const brand = compressorBrandM2.value;
+        const series = compressorSeriesM2.value;
+        const model = compressorModelM2.value;
+
+        if (brand && series && model) {
+            const displacement = getDisplacementByModel(brand, series, model);
+            if (displacement !== null) {
+                modelDisplacementValueM2.textContent = displacement.toFixed(0);
+                modelDisplacementInfoM2.classList.remove('hidden');
+                
+                // Automatically switch to volume mode (流量定义)
+                const volModeRadio = document.querySelector('input[name="flow_mode_m2"][value="vol"]');
+                const rpmModeRadio = document.querySelector('input[name="flow_mode_m2"][value="rpm"]');
+                if (volModeRadio && rpmModeRadio) {
+                    volModeRadio.checked = true;
+                    rpmModeRadio.checked = false;
+                    
+                    // Trigger change event to update UI
+                    volModeRadio.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                
+                // Auto-fill flow_m3h_m2
+                if (flowM3hM2) {
+                    flowM3hM2.value = displacement.toFixed(2);
+                    setButtonStale2();
+                }
+            } else {
+                modelDisplacementInfoM2.classList.add('hidden');
+            }
+        } else {
+            modelDisplacementInfoM2.classList.add('hidden');
+        }
+    });
+
+    // Flow mode change handler - Auto-fill when switching to volume mode
+    document.querySelectorAll('input[name="flow_mode_m2"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            if (radio.value === 'vol' && compressorModelM2.value) {
+                const brand = compressorBrandM2.value;
+                const series = compressorSeriesM2.value;
+                const model = compressorModelM2.value;
+                const displacement = getDisplacementByModel(brand, series, model);
+                if (displacement !== null && flowM3hM2) {
+                    flowM3hM2.value = displacement.toFixed(2);
+                    setButtonStale2();
+                }
+            }
+        });
+    });
 }
 
 // ---------------------------------------------------------------------
@@ -205,7 +323,7 @@ function calculateMode2() {
                         const disp = parseFloat(document.getElementById('displacement_m2').value);
                         V_th_m3_s = currentRpm * (disp / 1e6) / 60.0;
                     } else {
-                        const flow_m3h = parseFloat(document.getElementById('flow_m3h_m2').value);
+                        const flow_m3h = parseFloat(flowM3hM2.value);
                         V_th_m3_s = flow_m3h / 3600.0;
                     }
                     m_dot_suc = V_th_m3_s * eta_v_input * rho_suc;
@@ -639,6 +757,19 @@ export function initMode2(CP) {
     // SLHX
     slhxCheckbox = document.getElementById('enable_slhx_m2');
     slhxEffInput = document.getElementById('slhx_effectiveness_m2');
+
+    // Compressor Model Selectors
+    compressorBrandM2 = document.getElementById('compressor_brand_m2');
+    compressorSeriesM2 = document.getElementById('compressor_series_m2');
+    compressorModelM2 = document.getElementById('compressor_model_m2');
+    modelDisplacementInfoM2 = document.getElementById('model_displacement_info_m2');
+    modelDisplacementValueM2 = document.getElementById('model_displacement_value_m2');
+    flowM3hM2 = document.getElementById('flow_m3h_m2');
+
+    // Initialize compressor model selectors
+    if (compressorBrandM2 && compressorSeriesM2 && compressorModelM2) {
+        initCompressorModelSelectorsM2();
+    }
 
     if (calcFormM2) {
         calcFormM2.addEventListener('submit', (e) => { e.preventDefault(); calculateMode2(); });
