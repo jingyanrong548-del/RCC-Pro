@@ -84,7 +84,8 @@ export function initUI() {
     // -----------------------------------------------------------------
     const tabs = [
         { btnId: 'tab-btn-m2', contentId: 'tab-content-m2', sheetId: 'mobile-sheet-m2', calcBtnId: 'calc-button-mode-2' },
-        { btnId: 'tab-btn-m3', contentId: 'tab-content-m3', sheetId: 'mobile-sheet-m3', calcBtnId: 'calc-button-mode-3' }
+        { btnId: 'tab-btn-m3', contentId: 'tab-content-m3', sheetId: 'mobile-sheet-m3', calcBtnId: 'calc-button-mode-3' },
+        { btnId: 'tab-btn-m4', contentId: 'tab-content-m4', sheetId: 'mobile-sheet-m4', calcBtnId: 'calc-button-mode-4' }
     ];
 
     function switchTab(idx) {
@@ -110,7 +111,7 @@ export function initUI() {
     });
 
     function loadRecord(rec) {
-        const idx = rec.mode === 'M2' ? 0 : 1;
+        const idx = rec.mode === 'M2' ? 0 : rec.mode === 'M3' ? 1 : 2;
         switchTab(idx);
         const inputs = rec.inputs;
         if (inputs) {
@@ -156,6 +157,7 @@ export function initUI() {
     }
     setupBottomSheet('mobile-sheet-m2', 'sheet-handle-m2', 'mobile-close-m2');
     setupBottomSheet('mobile-sheet-m3', 'sheet-handle-m3', 'mobile-close-m3');
+    setupBottomSheet('mobile-sheet-m4', 'sheet-handle-m4', 'mobile-close-m4');
 
     // -----------------------------------------------------------------
     // 4. Inputs Setup & Standard Logic
@@ -248,6 +250,54 @@ export function initUI() {
     }
     setupLock('auto-eff-m2', ['eta_s_m2', 'eta_v_m2']);
     setupLock('auto-eff-m3', ['eta_iso_m3', 'eta_v_m3']);
+    setupLock('auto-eff-m4-lt', ['eta_v_m4_lt', 'eta_s_m4_lt']);
+    setupLock('auto-eff-m4-ht', ['eta_v_m4_ht', 'eta_s_m4_ht']);
+
+    // Mode 4: ECO Toggle Logic (HT only - LT取消ECO)
+    const ecoCbHt = document.getElementById('enable_eco_m4_ht');
+    if (ecoCbHt) ecoCbHt.addEventListener('change', () => {
+        document.getElementById('eco-settings-m4-ht').classList.toggle('hidden', !ecoCbHt.checked);
+        document.getElementById('eco-placeholder-m4-ht').classList.toggle('hidden', ecoCbHt.checked);
+    });
+
+    // Mode 4: SLHX Toggle Logic (LT only - HT取消SLHX)
+    const slhxCbLt = document.getElementById('enable_slhx_m4_lt');
+    if (slhxCbLt) slhxCbLt.addEventListener('change', () => {
+        document.getElementById('slhx-settings-m4-lt').classList.toggle('hidden', !slhxCbLt.checked);
+        document.getElementById('slhx-placeholder-m4-lt').classList.toggle('hidden', slhxCbLt.checked);
+    });
+
+    // Mode 4: ECO Type Toggle (HT only)
+    setupRadioToggle('eco_type_m4_ht', v => {
+        const subcoolerInputs = document.getElementById('eco-subcooler-inputs-m4-ht');
+        if (subcoolerInputs) {
+            subcoolerInputs.classList.toggle('hidden', v !== 'subcooler');
+        }
+    });
+
+    // Mode 4: ECO Pressure Mode Toggle (HT only) - Auto update saturation temp
+    setupRadioToggle('eco_press_mode_m4_ht', v => {
+        const satTempInput = document.getElementById('temp_eco_sat_m4_ht');
+        if (satTempInput) {
+            satTempInput.disabled = v === 'auto';
+            satTempInput.classList.toggle('bg-white/50', v === 'auto');
+        }
+    });
+
+    // Mode 4: Cascade Settings
+    setupRadioToggle('flow_mode_m4_lt', v => {
+        const rpmPanel = document.getElementById('rpm-inputs-m4-lt');
+        const volPanel = document.getElementById('vol-inputs-m4-lt');
+        if (rpmPanel) rpmPanel.style.display = v === 'rpm' ? 'grid' : 'none';
+        if (volPanel) volPanel.style.display = v === 'vol' ? 'block' : 'none';
+    });
+
+    setupRadioToggle('flow_mode_m4_ht', v => {
+        const rpmPanel = document.getElementById('rpm-inputs-m4-ht');
+        const volPanel = document.getElementById('vol-inputs-m4-ht');
+        if (rpmPanel) rpmPanel.style.display = v === 'rpm' ? 'grid' : 'none';
+        if (volPanel) volPanel.style.display = v === 'vol' ? 'block' : 'none';
+    });
     
     // Mode 3 Smart Moisture Unit Switcher
     const fluidM3 = document.getElementById('fluid_m3');

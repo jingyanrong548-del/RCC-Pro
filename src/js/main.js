@@ -7,13 +7,18 @@
 import { loadCoolProp, updateFluidInfo } from './coolprop_loader.js';
 import { initMode2, triggerMode2EfficiencyUpdate } from './mode2_oil_refrig.js';
 import { initMode3, triggerMode3EfficiencyUpdate } from './mode3_oil_gas.js';
-import { initUI } from './ui.js'; 
+import { initMode4, triggerMode4EfficiencyUpdate } from './mode4_cascade.js';
+import { initUI } from './ui.js';
+import { APP_VERSION } from './version.js'; 
 
 // 2. 主应用逻辑: 等待 DOM 加载完毕
 document.addEventListener('DOMContentLoaded', () => {
 
     // 3. 首先，立即初始化所有不依赖于CoolProp的UI交互
     initUI();
+    
+    // 3.1 更新版本号显示
+    APP_VERSION.updateDisplay();
 
     // 4. 定义需要被更新状态的元素
     const buttons = [
@@ -23,7 +28,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const fluidInfos = [
         { select: document.getElementById('fluid_m2'), info: document.getElementById('fluid-info-m2') },
-        { select: document.getElementById('fluid_m3'), info: document.getElementById('fluid-info-m3') }
+        { select: document.getElementById('fluid_m3'), info: document.getElementById('fluid-info-m3') },
+        { select: document.getElementById('fluid_m4_lt'), info: document.getElementById('fluid-info-m4-lt') },
+        { select: document.getElementById('fluid_m4_ht'), info: document.getElementById('fluid-info-m4-ht') }
     ];
 
     const buttonTexts = {
@@ -40,6 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // 7. 在CoolProp加载成功后，才初始化依赖于它的计算模块
             initMode2(CP);
             initMode3(CP);
+            initMode4(CP);
 
             // 8. 更新所有计算按钮的状态
             buttons.forEach(btn => {
@@ -59,6 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // 10. [修复] 在所有模块都初始化完毕后，再手动触发一次初始的经验效率计算
             triggerMode2EfficiencyUpdate();
             triggerMode3EfficiencyUpdate();
+            triggerMode4EfficiencyUpdate();
 
         })
         .catch((err) => {
