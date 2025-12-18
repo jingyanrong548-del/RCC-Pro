@@ -8,6 +8,8 @@ import { loadCoolProp, updateFluidInfo } from './coolprop_loader.js';
 import { initMode2, triggerMode2EfficiencyUpdate } from './mode2_oil_refrig.js';
 import { initMode3, triggerMode3EfficiencyUpdate } from './mode3_oil_gas.js';
 import { initMode4, triggerMode4EfficiencyUpdate } from './mode4_cascade.js';
+import { initMode5, triggerMode5EfficiencyUpdate } from './mode5_two_stage_single.js';
+import { initMode6, triggerMode6EfficiencyUpdate } from './mode6_two_stage_double.js';
 import { initUI } from './ui.js';
 import { APP_VERSION } from './version.js'; 
 
@@ -30,7 +32,9 @@ document.addEventListener('DOMContentLoaded', () => {
         { select: document.getElementById('fluid_m2'), info: document.getElementById('fluid-info-m2') },
         { select: document.getElementById('fluid_m3'), info: document.getElementById('fluid-info-m3') },
         { select: document.getElementById('fluid_m4_lt'), info: document.getElementById('fluid-info-m4-lt') },
-        { select: document.getElementById('fluid_m4_ht'), info: document.getElementById('fluid-info-m4-ht') }
+        { select: document.getElementById('fluid_m4_ht'), info: document.getElementById('fluid-info-m4-ht') },
+        { select: document.getElementById('fluid_m5'), info: document.getElementById('fluid-info-m5') },
+        { select: document.getElementById('fluid_m6'), info: document.getElementById('fluid-info-m6') }
     ];
 
     const buttonTexts = {
@@ -48,6 +52,8 @@ document.addEventListener('DOMContentLoaded', () => {
             initMode2(CP);
             initMode3(CP);
             initMode4(CP);
+            initMode5(CP);
+            initMode6(CP);
 
             // 8. 更新所有计算按钮的状态
             buttons.forEach(btn => {
@@ -68,6 +74,8 @@ document.addEventListener('DOMContentLoaded', () => {
             triggerMode2EfficiencyUpdate();
             triggerMode3EfficiencyUpdate();
             triggerMode4EfficiencyUpdate();
+            triggerMode5EfficiencyUpdate();
+            triggerMode6EfficiencyUpdate();
 
         })
         .catch((err) => {

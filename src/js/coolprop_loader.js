@@ -73,6 +73,7 @@ const fluidInfoData = {
     'R1234yf': { gwp: '<1', odp: 0, safety: 'A2L' },
     'R1270': { gwp: 2, odp: 0, safety: 'A3' },
     'R1150': { gwp: 2, odp: 0, safety: 'A3' },
+    'R507A': { gwp: 3985, odp: 0, safety: 'A1' },
     'Air': { gwp: 0, odp: 0, safety: 'A1' },
     'Nitrogen': { gwp: 0, odp: 0, safety: 'A1' },
     'Helium': { gwp: 0, odp: 0, safety: 'A1' },

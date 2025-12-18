@@ -85,7 +85,9 @@ export function initUI() {
     const tabs = [
         { btnId: 'tab-btn-m2', contentId: 'tab-content-m2', sheetId: 'mobile-sheet-m2', calcBtnId: 'calc-button-mode-2' },
         { btnId: 'tab-btn-m3', contentId: 'tab-content-m3', sheetId: 'mobile-sheet-m3', calcBtnId: 'calc-button-mode-3' },
-        { btnId: 'tab-btn-m4', contentId: 'tab-content-m4', sheetId: 'mobile-sheet-m4', calcBtnId: 'calc-button-mode-4' }
+        { btnId: 'tab-btn-m4', contentId: 'tab-content-m4', sheetId: 'mobile-sheet-m4', calcBtnId: 'calc-button-mode-4' },
+        { btnId: 'tab-btn-m5', contentId: 'tab-content-m5', sheetId: 'mobile-sheet-m5', calcBtnId: 'calc-button-mode-5' },
+        { btnId: 'tab-btn-m6', contentId: 'tab-content-m6', sheetId: 'mobile-sheet-m6', calcBtnId: 'calc-button-mode-6' }
     ];
 
     function switchTab(idx) {
@@ -119,7 +121,7 @@ export function initUI() {
     });
 
     function loadRecord(rec) {
-        const idx = rec.mode === 'M2' ? 0 : rec.mode === 'M3' ? 1 : 2;
+        const idx = rec.mode === 'M2' ? 0 : rec.mode === 'M3' ? 1 : rec.mode === 'M4' ? 2 : rec.mode === 'M5' ? 3 : 4;
         switchTab(idx);
         const inputs = rec.inputs;
         if (inputs) {
@@ -166,6 +168,8 @@ export function initUI() {
     setupBottomSheet('mobile-sheet-m2', 'sheet-handle-m2', 'mobile-close-m2');
     setupBottomSheet('mobile-sheet-m3', 'sheet-handle-m3', 'mobile-close-m3');
     setupBottomSheet('mobile-sheet-m4', 'sheet-handle-m4', 'mobile-close-m4');
+    setupBottomSheet('mobile-sheet-m5', 'sheet-handle-m5', 'mobile-close-m5');
+    setupBottomSheet('mobile-sheet-m6', 'sheet-handle-m6', 'mobile-close-m6');
 
     // -----------------------------------------------------------------
     // 4. Inputs Setup & Standard Logic
@@ -260,6 +264,10 @@ export function initUI() {
     setupLock('auto-eff-m3', ['eta_iso_m3', 'eta_v_m3']);
     setupLock('auto-eff-m4-lt', ['eta_v_m4_lt', 'eta_s_m4_lt']);
     setupLock('auto-eff-m4-ht', ['eta_v_m4_ht', 'eta_s_m4_ht']);
+    setupLock('auto-eff-m5-lp', ['eta_v_m5_lp', 'eta_s_m5_lp']);
+    setupLock('auto-eff-m5-hp', ['eta_s_m5_hp']);
+    setupLock('auto-eff-m6-lp', ['eta_v_m6_lp', 'eta_s_m6_lp']);
+    setupLock('auto-eff-m6-hp', ['eta_v_m6_hp', 'eta_s_m6_hp']);
 
     // Mode 4: ECO Toggle Logic (HT only - LT取消ECO)
     const ecoCbHt = document.getElementById('enable_eco_m4_ht');
@@ -275,6 +283,57 @@ export function initUI() {
         document.getElementById('slhx-placeholder-m4-lt').classList.toggle('hidden', slhxCbLt.checked);
     });
 
+    // Mode 6: Intermediate Cooler (ECO) Toggle Logic
+    const ecoCbM6 = document.getElementById('enable_eco_m6');
+    if (ecoCbM6) ecoCbM6.addEventListener('change', () => {
+        const settings = document.getElementById('eco-settings-m6');
+        const placeholder = document.getElementById('eco-placeholder-m6');
+        if (settings) settings.classList.toggle('hidden', !ecoCbM6.checked);
+        if (placeholder) placeholder.classList.toggle('hidden', ecoCbM6.checked);
+    });
+    
+    // Mode 6: ECO Type Toggle - Intermediate Cooler
+    setupRadioToggle('eco_type_m6', v => {
+        const flashTankInputs = document.getElementById('eco-flash-tank-inputs-m6');
+        const subcoolerInputs = document.getElementById('eco-subcooler-inputs-m6');
+        if (flashTankInputs) flashTankInputs.classList.toggle('hidden', v !== 'flash_tank');
+        if (subcoolerInputs) subcoolerInputs.classList.toggle('hidden', v !== 'subcooler');
+    });
+    
+    // Mode 6: ECO Toggle Logic - Low Pressure Stage
+    const ecoCbM6Lp = document.getElementById('enable_eco_m6_lp');
+    if (ecoCbM6Lp) ecoCbM6Lp.addEventListener('change', () => {
+        const settings = document.getElementById('eco-settings-m6-lp');
+        const placeholder = document.getElementById('eco-placeholder-m6-lp');
+        if (settings) settings.classList.toggle('hidden', !ecoCbM6Lp.checked);
+        if (placeholder) placeholder.classList.toggle('hidden', ecoCbM6Lp.checked);
+    });
+    
+    // Mode 6: ECO Toggle Logic - High Pressure Stage
+    const ecoCbM6Hp = document.getElementById('enable_eco_m6_hp');
+    if (ecoCbM6Hp) ecoCbM6Hp.addEventListener('change', () => {
+        const settings = document.getElementById('eco-settings-m6-hp');
+        const placeholder = document.getElementById('eco-placeholder-m6-hp');
+        if (settings) settings.classList.toggle('hidden', !ecoCbM6Hp.checked);
+        if (placeholder) placeholder.classList.toggle('hidden', ecoCbM6Hp.checked);
+    });
+    
+    // Mode 6: ECO Type Toggle - Low Pressure Stage
+    setupRadioToggle('eco_type_m6_lp', v => {
+        const subcoolerInputs = document.getElementById('eco-subcooler-inputs-m6-lp');
+        if (subcoolerInputs) {
+            subcoolerInputs.classList.toggle('hidden', v !== 'subcooler');
+        }
+    });
+    
+    // Mode 6: ECO Type Toggle - High Pressure Stage
+    setupRadioToggle('eco_type_m6_hp', v => {
+        const subcoolerInputs = document.getElementById('eco-subcooler-inputs-m6-hp');
+        if (subcoolerInputs) {
+            subcoolerInputs.classList.toggle('hidden', v !== 'subcooler');
+        }
+    });
+
     // Mode 4: ECO Type Toggle (HT only)
     setupRadioToggle('eco_type_m4_ht', v => {
         const subcoolerInputs = document.getElementById('eco-subcooler-inputs-m4-ht');
@@ -286,6 +345,31 @@ export function initUI() {
     // Mode 4: ECO Pressure Mode Toggle (HT only) - Auto update saturation temp
     setupRadioToggle('eco_press_mode_m4_ht', v => {
         const satTempInput = document.getElementById('temp_eco_sat_m4_ht');
+        if (satTempInput) {
+            satTempInput.disabled = v === 'auto';
+            satTempInput.classList.toggle('bg-white/50', v === 'auto');
+        }
+    });
+
+    // Mode 5: Intermediate Pressure Mode Toggle
+    setupRadioToggle('inter_press_mode_m5', v => {
+        const satTempInput = document.getElementById('temp_inter_sat_m5');
+        if (satTempInput) {
+            satTempInput.disabled = v === 'auto';
+            satTempInput.classList.toggle('bg-white/50', v === 'auto');
+        }
+    });
+
+    // Mode 5: SLHX Toggle Logic
+    const slhxCbM5 = document.getElementById('enable_slhx_m5');
+    if (slhxCbM5) slhxCbM5.addEventListener('change', () => {
+        document.getElementById('slhx-settings-m5').classList.toggle('hidden', !slhxCbM5.checked);
+        document.getElementById('slhx-placeholder-m5').classList.toggle('hidden', slhxCbM5.checked);
+    });
+
+    // Mode 6: Intermediate Pressure Mode Toggle
+    setupRadioToggle('inter_press_mode_m6', v => {
+        const satTempInput = document.getElementById('temp_inter_sat_m6');
         if (satTempInput) {
             satTempInput.disabled = v === 'auto';
             satTempInput.classList.toggle('bg-white/50', v === 'auto');

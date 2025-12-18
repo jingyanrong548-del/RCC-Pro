@@ -5,8 +5,15 @@
 
 /**
  * 压缩机型号数据库
- * 结构: { brand: { series: [{ model, displacement }] } }
+ * 结构: { brand: { series: [{ model, displacement, ...extra }] } }
  * displacement 单位: m³/h (理论输气量)
+ *
+ * 对于日本前川（MYCOM）单机双级机型，额外字段：
+ *  - disp_lp: 低压级理论排量 (m³/h)
+ *  - disp_hp: 高压级理论排量 (m³/h)
+ *  - vi_ratio: 级间容积比 (Vi,L / Vi,H)
+ *  - rotor_code: 典型转子代码描述
+ * 其中 displacement 字段等同于 disp_lp，确保旧逻辑仍然可用。
  */
 export const COMPRESSOR_MODELS = {
     '冰山': {
@@ -39,11 +46,116 @@ export const COMPRESSOR_MODELS = {
             { model: 'LGC12.5Z', displacement: 250 },
             { model: 'LGC16Z', displacement: 400 }
         ]
+    },
+    // 日本前川（MYCOM）单机双级系列，仅在 Mode 5 中使用其扩展字段
+    '前川(MYCOM)': {
+        'LSC两级系列': [
+            {
+                model: '1610SLC-52',
+                displacement: 367,      // = disp_lp
+                disp_lp: 367,
+                disp_hp: 135,
+                vi_ratio: 2.7,
+                rotor_code: '160mm / 100mm'
+            },
+            {
+                model: '1612LSC',
+                displacement: 622,
+                disp_lp: 622,
+                disp_hp: 197,
+                vi_ratio: 3.16,
+                rotor_code: '160mm / 125mm'
+            },
+            {
+                model: '2016LSC',
+                displacement: 1210,
+                disp_lp: 1210,
+                disp_hp: 519,
+                vi_ratio: 2.33,
+                rotor_code: '200mm / 160mm'
+            },
+            {
+                model: '2520LSC',
+                displacement: 2360,
+                disp_lp: 2360,
+                disp_hp: 810,
+                vi_ratio: 2.91,
+                rotor_code: '250mm / 200mm'
+            },
+            {
+                model: '3225LSC',
+                displacement: 4740,
+                disp_lp: 4740,
+                disp_hp: 1580,
+                vi_ratio: 3.0,
+                rotor_code: '320mm / 250mm'
+            },
+            {
+                model: '4032LSC',
+                displacement: 9700,
+                disp_lp: 9700,
+                disp_hp: 3170,
+                vi_ratio: 3.06,
+                rotor_code: '400mm / 320mm'
+            }
+        ],
+        'MS系列': [
+            {
+                model: '1210MS',
+                displacement: 162,      // = disp_lp
+                disp_lp: 162,
+                disp_hp: 67,
+                rotor_code: '最小型单机双级'
+            },
+            {
+                model: '1612MS',
+                displacement: 367,
+                disp_lp: 367,
+                disp_hp: 135,
+                rotor_code: '常用机型'
+            },
+            {
+                model: '2016MS',
+                displacement: 715,
+                disp_lp: 715,
+                disp_hp: 267,
+                rotor_code: '中型机'
+            },
+            {
+                model: '2520MS',
+                displacement: 1318,
+                disp_lp: 1318,
+                disp_hp: 519,
+                rotor_code: 'MS系列大机型'
+            }
+        ],
+        'SS系列': [
+            {
+                model: '1612SS',
+                displacement: 240,      // = disp_lp
+                disp_lp: 240,
+                disp_hp: 115,
+                rotor_code: '强化级间压比'
+            },
+            {
+                model: '2016SS',
+                displacement: 465,
+                disp_lp: 465,
+                disp_hp: 225,
+                rotor_code: '强化级间压比'
+            },
+            {
+                model: '2520SS',
+                displacement: 895,
+                disp_lp: 895,
+                disp_hp: 435,
+                rotor_code: '强化级间压比'
+            }
+        ]
     }
-    // 预留扩展：冰轮系列、武冷系列、MYCOM 系列等
+    // 预留扩展：冰轮系列、武冷系列等
     // '冰轮': { ... },
-    // '武冷': { ... },
-    // 'MYCOM': { ... }
+    // '武冷': { ... }
 };
 
 /**
@@ -86,6 +198,19 @@ export function getDisplacementByModel(brand, series, model) {
     const models = getModelsBySeries(brand, series);
     const found = models.find(m => m.model === model);
     return found ? found.displacement : null;
+}
+
+/**
+ * 获取完整型号对象（包括可能存在的扩展字段）
+ * @param {string} brand
+ * @param {string} series
+ * @param {string} model
+ * @returns {{model: string, displacement: number}|null}
+ */
+export function getModelDetail(brand, series, model) {
+    const models = getModelsBySeries(brand, series);
+    const found = models.find(m => m.model === model);
+    return found || null;
 }
 
 /**
