@@ -94,11 +94,19 @@ export function initUI() {
             const content = document.getElementById(t.contentId);
             const sheet = document.getElementById(t.sheetId);
             if (i === idx) {
-                if (btn) { btn.classList.add('bg-white', 'shadow-sm', 'text-gray-900'); btn.classList.remove('text-gray-500'); }
+                // 选中状态：白色背景、深色文字、加粗、更明显的阴影和边框
+                if (btn) { 
+                    btn.classList.add('bg-white', 'shadow-md', 'text-gray-900', 'font-bold', 'ring-2', 'ring-blue-500/30'); 
+                    btn.classList.remove('text-gray-500', 'font-semibold'); 
+                }
                 if (content) { content.classList.remove('hidden', 'opacity-0'); content.classList.add('opacity-100'); }
                 if (sheet) sheet.classList.remove('hidden');
             } else {
-                if (btn) { btn.classList.remove('bg-white', 'shadow-sm', 'text-gray-900'); btn.classList.add('text-gray-500'); }
+                // 未选中状态：透明背景、灰色文字、正常字重
+                if (btn) { 
+                    btn.classList.remove('bg-white', 'shadow-md', 'text-gray-900', 'font-bold', 'ring-2', 'ring-blue-500/30'); 
+                    btn.classList.add('text-gray-500', 'font-semibold'); 
+                }
                 if (content) { content.classList.add('hidden', 'opacity-0'); content.classList.remove('opacity-100'); }
                 if (sheet) sheet.classList.add('hidden');
             }
