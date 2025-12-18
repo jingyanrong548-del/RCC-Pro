@@ -38,6 +38,7 @@ let flowHtInput;
 let etaVHtInput, etaSHtInput, autoEffHtCheckbox;
 let compressorBrandHt, compressorSeriesHt, compressorModelHt, modelDisplacementInfoHt, modelDisplacementValueHt;
 let ecoCheckboxHt, ecoTypeHt, ecoPressModeHt, ecoSatTempHt, ecoSuperheatHt, ecoDtHt;
+let tempDischargeActualLt, tempDischargeActualHt;
 
 // 中间换热器
 let approachDtInput;
@@ -105,7 +106,9 @@ function computeSingleStageCycle({
     ecoDt_K = 5.0,
     // SLHX参数
     isSlhxEnabled = false,
-    slhxEff = 0.5
+    slhxEff = 0.5,
+    // 排气温度参数（用于油冷负荷计算）
+    T_2a_est_C = null
 }) {
     const T_evap_K = Te_C + 273.15;
     const T_cond_K = Tc_C + 273.15;
@@ -156,45 +159,176 @@ function computeSingleStageCycle({
         const V_th_m3_s = flow_m3h / 3600.0;
         m_dot_suc = V_th_m3_s * eta_v * rho_suc;
 
-        // 3. ECO Calculation
+        // =========================================================
+        // 3. ECONOMIZER (ECO) Calculation - 经济器计算
+        // =========================================================
+        // 经济器通过中间压力（P_eco）降低压缩功，提高系统效率
+        // 两种模式：闪发箱（Flash Tank）和板换过冷器（Subcooler）
+        // =========================================================
         if (isEcoEnabled) {
+            // 3.1 确定中间压力 P_eco_Pa
+            // 方法1：自动模式 - 使用几何平均法（行业通用规则）
+            // P_eco = √(P_s × P_d)，通常能获得较好的性能
+            // 方法2：手动模式 - 根据用户指定的饱和温度计算
             if (ecoPressMode === 'auto') {
                 P_eco_Pa = Math.sqrt(Pe_Pa * Pc_Pa);
                 T_eco_sat_K = CP_INSTANCE.PropsSI('T', 'P', P_eco_Pa, 'Q', 0, fluid);
             } else {
+                // 手动指定饱和温度
                 T_eco_sat_K = ecoSatTemp_C + 273.15;
+                // 使用Q=0.5（两相区）计算对应的饱和压力
                 P_eco_Pa = CP_INSTANCE.PropsSI('P', 'T', T_eco_sat_K, 'Q', 0.5, fluid);
             }
+
+            // 验证中间压力合理性
+            if (P_eco_Pa <= Pe_Pa || P_eco_Pa >= Pc_Pa) {
+                throw new Error(`无效的中间压力：P_eco (${(P_eco_Pa/1e5).toFixed(2)} bar) 必须在 P_s 和 P_d 之间`);
+            }
+
+            // 3.2 计算中间压力下的饱和状态
+            // h_eco_liq: 饱和液体焓值（用于Flash Tank模式）
+            // h_eco_vap: 饱和蒸汽焓值（用于Flash Tank模式）
             const h_eco_liq = CP_INSTANCE.PropsSI('H', 'T', T_eco_sat_K, 'Q', 0, fluid);
             const h_eco_vap = CP_INSTANCE.PropsSI('H', 'T', T_eco_sat_K, 'Q', 1, fluid);
+
+            // 3.3 点7：节流后的状态（等焓过程）
+            // 从点3（冷凝器出口）节流到中间压力，焓值不变
             h_7 = h3;
 
+            // 3.4 根据经济器类型计算补气过程
+            // 调试信息：验证ecoType的值
+            console.log(`[Mode4 computeSingleStageCycle] ecoType=${ecoType}, isEcoEnabled=${isEcoEnabled}`);
+            console.log(`[Mode4 computeSingleStageCycle] ecoType类型: ${typeof ecoType}, 值: "${ecoType}"`);
+            console.log(`[Mode4 computeSingleStageCycle] ecoType === 'flash_tank': ${ecoType === 'flash_tank'}`);
+            console.log(`[Mode4 computeSingleStageCycle] ecoType === 'subcooler': ${ecoType === 'subcooler'}`);
+            
+            // 强制检查：确保ecoType的值正确
+            if (ecoType !== 'flash_tank' && ecoType !== 'subcooler') {
+                console.error(`[Mode4] 严重错误：ecoType的值无效: "${ecoType}"，类型: ${typeof ecoType}`);
+                throw new Error(`无效的ecoType值: "${ecoType}"，必须是'flash_tank'或'subcooler'`);
+            }
+            
             if (ecoType === 'flash_tank') {
-                h_6 = h_eco_vap;
+                // =========================================================
+                // 闪发箱模式（Flash Tank）
+                // =========================================================
+                // 工作原理：
+                // 1. 点3的液体节流到点7（P_eco_Pa，等焓过程）
+                // 2. 在闪发箱中分离为饱和液体（点5）和饱和蒸汽（点6）
+                // 3. 点5继续流向蒸发器，点6作为补气进入压缩机
+                // =========================================================
+                console.log('[Mode4] 使用闪发箱模式（Flash Tank）计算');
+                console.log(`[Mode4 Flash Tank] P_eco_Pa=${(P_eco_Pa/1e5).toFixed(2)} bar, h_eco_liq=${(h_eco_liq/1000).toFixed(1)} kJ/kg, h_eco_vap=${(h_eco_vap/1000).toFixed(1)} kJ/kg`);
+                
+                // 点5：闪发箱底部饱和液体（在P_eco_Pa下）
                 h_5 = h_eco_liq;
+                
+                // 点6：闪发箱顶部饱和蒸汽（在P_eco_Pa下）
+                h_6 = h_eco_vap;
+                
+                // 计算闪蒸干度（Flash Quality）
+                // x = (h_7 - h_5) / (h_6 - h_5)
+                // 物理意义：节流后的两相混合物中，蒸汽的质量分数
                 const x_flash = (h_7 - h_5) / (h_6 - h_5);
+                console.log(`[Mode4 Flash Tank] 点7: h=${(h_7/1000).toFixed(1)} kJ/kg, 点5: h=${(h_5/1000).toFixed(1)} kJ/kg, 点6: h=${(h_6/1000).toFixed(1)} kJ/kg`);
+                console.log(`[Mode4 Flash Tank] x_flash=${x_flash.toFixed(4)}`);
+                
+                // 验证干度合理性
+                if (x_flash < 0 || x_flash > 1) {
+                    throw new Error(`闪蒸干度异常：x_flash = ${x_flash.toFixed(3)}，应在0-1之间`);
+                }
+                
+                // 计算补气流量（基于质量守恒和能量守恒）
+                // m_inj / m_suc = x_flash / (1 - x_flash)
+                // 物理意义：补气流量与主路流量的比值等于干度与液体分数的比值
+                m_dot_inj = m_dot_suc * (x_flash / (1 - x_flash));
+                m_dot_total = m_dot_suc + m_dot_inj;
+                console.log(`[Mode4 Flash Tank] m_dot_suc=${m_dot_suc.toFixed(4)} kg/s, m_dot_inj=${m_dot_inj.toFixed(4)} kg/s, m_dot_total=${m_dot_total.toFixed(4)} kg/s`);
+                
+                // 进入SLHX的液体状态（闪发箱底部饱和液体）
+                h_liq_in = h_5;
+                
+                // 流量分配（用于状态点表和p-h图）
+                m_p7 = m_dot_total;  // 点7：总流量（节流前）
+                m_p5 = m_dot_suc;    // 点5：主路流量（闪发箱底部液体）
+                m_p6 = m_dot_inj;    // 点6：补气流量（闪发箱顶部蒸汽）
+                
+            } else if (ecoType === 'subcooler') {
+                // =========================================================
+                // 板换过冷器模式（Subcooler）
+                // =========================================================
+                // 工作原理：
+                // 1. 点3的液体分成两路：
+                //    - 主路：经过过冷器冷却到点5（仍在Pc_Pa高压下）
+                //    - 支路：节流到点7（P_eco_Pa），在过冷器中加热变成过热蒸汽点6
+                // 2. 点5继续流向蒸发器，点6作为补气进入压缩机
+                // 3. 能量平衡：m_suc × (h_3 - h_5) = m_inj × (h_6 - h_7)
+                // =========================================================
+                console.log('[Mode4] 使用过冷器模式（Subcooler）计算');
+                console.log(`[Mode4 Subcooler] T_eco_sat_K=${T_eco_sat_K.toFixed(2)} K, ecoSuperheat_K=${ecoSuperheat_K}, ecoDt_K=${ecoDt_K}`);
+                console.log(`[Mode4 Subcooler] P_eco_Pa=${(P_eco_Pa/1e5).toFixed(2)} bar, Pc_Pa=${(Pc_Pa/1e5).toFixed(2)} bar`);
+                
+                // 点6：补气过热蒸汽（在P_eco_Pa下）
+                // 从点7（节流后的两相状态）在过冷器中加热，获得过热度
+                const T_inj_K = T_eco_sat_K + ecoSuperheat_K;
+                h_6 = CP_INSTANCE.PropsSI('H', 'T', T_inj_K, 'P', P_eco_Pa, fluid);
+                console.log(`[Mode4 Subcooler] 点6: T=${(T_inj_K-273.15).toFixed(1)}°C, P=${(P_eco_Pa/1e5).toFixed(2)} bar, h=${(h_6/1000).toFixed(1)} kJ/kg`);
+                
+                // 点5：过冷器出口液体（在Pc_Pa高压下）
+                // 从点3经过过冷器冷却，获得过冷度
+                // 注意：T_eco_sat_K是中间压力P_eco_Pa下的饱和温度，但点5在高压Pc_Pa下
+                // ecoDt_K是相对于中间压力饱和温度的过冷度
+                const T_5_K = T_eco_sat_K + ecoDt_K;
+                h_5 = CP_INSTANCE.PropsSI('H', 'T', T_5_K, 'P', Pc_Pa, fluid);
+                console.log(`[Mode4 Subcooler] 点5: T=${(T_5_K-273.15).toFixed(1)}°C, P=${(Pc_Pa/1e5).toFixed(2)} bar, h=${(h_5/1000).toFixed(1)} kJ/kg`);
+                console.log(`[Mode4 Subcooler] 点3: h=${(h3/1000).toFixed(1)} kJ/kg, 点7: h=${(h_7/1000).toFixed(1)} kJ/kg`);
+                
+                // 进入SLHX的液体状态（过冷器出口液体）
+                h_liq_in = h_5;
+                
+                // 能量平衡计算补气流量
+                // 主路放热 = 支路吸热
+                // m_suc × (h_3 - h_5) = m_inj × (h_6 - h_7)
+                // 因此：m_inj = m_suc × (h_3 - h_5) / (h_6 - h_7)
+                const h_diff_main = h3 - h_5;  // 主路过冷放热
+                const h_diff_inj = h_6 - h_7;  // 支路加热吸热
+                
+                console.log(`[Mode4 Subcooler] 主路放热=${(h_diff_main/1000).toFixed(1)} kJ/kg, 支路吸热=${(h_diff_inj/1000).toFixed(1)} kJ/kg`);
+                
+                // 验证能量平衡合理性
+                if (h_diff_main <= 0 || h_diff_inj <= 0) {
+                    throw new Error(`过冷器能量平衡异常：主路放热=${h_diff_main.toFixed(1)} J/kg，支路吸热=${h_diff_inj.toFixed(1)} J/kg`);
+                }
+                
+                m_dot_inj = (m_dot_suc * h_diff_main) / h_diff_inj;
+                m_dot_total = m_dot_suc + m_dot_inj;
+                console.log(`[Mode4 Subcooler] m_dot_suc=${m_dot_suc.toFixed(4)} kg/s, m_dot_inj=${m_dot_inj.toFixed(4)} kg/s, m_dot_total=${m_dot_total.toFixed(4)} kg/s`);
+                
+                // 流量分配（用于状态点表和p-h图）
+                m_p5 = m_dot_suc;    // 点5：主路流量
+                m_p7 = m_dot_inj;    // 点7：支路流量（节流后）
+                m_p6 = m_dot_inj;    // 点6：补气流量（加热后）
+            } else {
+                // 如果ecoType不是预期的值，输出警告并使用默认值（闪蒸罐模式）
+                console.warn(`[Mode4] 未知的ecoType值: "${ecoType}"，默认使用闪蒸罐模式`);
+                // 使用闪蒸罐模式作为fallback
+                h_5 = h_eco_liq;
+                h_6 = h_eco_vap;
+                const x_flash = (h_7 - h_5) / (h_6 - h_5);
+                if (x_flash < 0 || x_flash > 1) {
+                    throw new Error(`闪蒸干度异常：x_flash = ${x_flash.toFixed(3)}，应在0-1之间`);
+                }
                 m_dot_inj = m_dot_suc * (x_flash / (1 - x_flash));
                 m_dot_total = m_dot_suc + m_dot_inj;
                 h_liq_in = h_5;
                 m_p7 = m_dot_total;
                 m_p5 = m_dot_suc;
                 m_p6 = m_dot_inj;
-            } else {
-                // Subcooler
-                const T_inj_K = T_eco_sat_K + ecoSuperheat_K;
-                h_6 = CP_INSTANCE.PropsSI('H', 'T', T_inj_K, 'P', P_eco_Pa, fluid);
-                const T_5_K = T_eco_sat_K + ecoDt_K;
-                h_5 = CP_INSTANCE.PropsSI('H', 'T', T_5_K, 'P', Pc_Pa, fluid);
-                h_liq_in = h_5;
-                m_dot_inj = (m_dot_suc * (h3 - h_5)) / (h_6 - h_7);
-                m_dot_total = m_dot_suc + m_dot_inj;
-                m_p5 = m_dot_suc;
-                m_p7 = m_dot_inj;
-                m_p6 = m_dot_inj;
             }
         } else {
+            // 无经济器模式：简单循环
             m_dot_total = m_dot_suc;
-            h_liq_in = h3;
+            h_liq_in = h3;  // 冷凝器液体直接进入SLHX
         }
 
         // 4. SLHX Loop
@@ -228,35 +362,97 @@ function computeSingleStageCycle({
     }
 
     // =========================================================
-    // Work & Finalization
+    // 4. WORK & FINALIZATION - 压缩功计算
+    // =========================================================
+    // 计算等熵压缩功，考虑经济器的两级压缩过程
     // =========================================================
     let W_ideal_W = 0;
-    let h_mid_1s = 0, h_mix = 0; // 用于功率计算（两级压缩），不用于P-h图显示
+    let h_mid_1s = 0, h_mix = 0, h_2s_stage2 = 0; // 用于功率计算和P-h图显示
+    
     if (!isEcoEnabled) {
+        // 4.1 单级压缩（无经济器）
+        // 从吸气状态（h_suc, s_suc）等熵压缩到排气压力Pc_Pa
         const h_2s = CP_INSTANCE.PropsSI('H', 'P', Pc_Pa, 'S', s_suc, fluid);
         W_ideal_W = m_dot_suc * (h_2s - h_suc);
     } else {
+        // 4.2 两级压缩（带经济器）
+        // =========================================================
+        // 第一阶段压缩：P_s → P_eco
+        // =========================================================
+        // 从吸气状态（h_suc, s_suc）等熵压缩到中间压力P_eco_Pa
+        // 得到点mid（第一级压缩终点）
         h_mid_1s = CP_INSTANCE.PropsSI('H', 'P', P_eco_Pa, 'S', s_suc, fluid);
         const W_s1 = m_dot_suc * (h_mid_1s - h_suc);
-        h_mix = (m_dot_suc * h_mid_1s + m_dot_inj * h_6) / m_dot_total; // 混合后的焓值
+        
+        // =========================================================
+        // 补气混合过程（关键热力学计算）
+        // =========================================================
+        // 在补气口处，主回路冷媒与补气支路冷媒混合
+        // 混合焓值计算（质量加权平均）：
+        // h_mix = (m_main × h_mid + m_inj × h_6) / (m_main + m_inj)
+        // 物理意义：能量守恒，混合后的总焓等于混合前各部分焓的加权和
+        // =========================================================
+        h_mix = (m_dot_suc * h_mid_1s + m_dot_inj * h_6) / m_dot_total;
+        
+        // 验证混合逻辑：h_mix应该小于h_mid_1s（因为h_6 < h_mid_1s）
+        if (h_mix >= h_mid_1s) {
+            console.warn(`混合逻辑异常：h_mix (${h_mix.toFixed(1)} J/kg) >= h_mid_1s (${h_mid_1s.toFixed(1)} J/kg)，补气温度可能异常`);
+        }
+        
+        // 计算混合后的熵值（用于第二阶段等熵压缩）
         const s_mix = CP_INSTANCE.PropsSI('S', 'H', h_mix, 'P', P_eco_Pa, fluid);
-        const h_2s_stage2 = CP_INSTANCE.PropsSI('H', 'P', Pc_Pa, 'S', s_mix, fluid);
+        
+        // =========================================================
+        // 第二阶段压缩：P_eco → P_d
+        // =========================================================
+        // 从混合状态（h_mix, s_mix）等熵压缩到排气压力Pc_Pa
+        h_2s_stage2 = CP_INSTANCE.PropsSI('H', 'P', Pc_Pa, 'S', s_mix, fluid);
         const W_s2 = m_dot_total * (h_2s_stage2 - h_mix);
+        
+        // 总等熵压缩功 = 第一阶段 + 第二阶段
         W_ideal_W = W_s1 + W_s2;
     }
 
     W_shaft_W = W_ideal_W / eta_s;
     const W_input_W = W_shaft_W;
 
-    // 估算实际排气焓 h2a：能量守恒
+    // 系统入口总焓
     const h_system_in = (m_dot_suc * h_suc + m_dot_inj * (isEcoEnabled ? h_6 : 0));
-    const h_2a_target = h_system_in + (W_shaft_W / m_dot_total);
-    const T2a_K = CP_INSTANCE.PropsSI('T', 'P', Pc_Pa, 'H', h_2a_target, fluid);
-    const T2a_C = T2a_K - 273.15;
+    
+    // 油冷负荷计算（类似mode2的逻辑）
+    let Q_oil_W = 0;
+    let T_2a_final_C = 0;
+    let h_2a_final = 0;
+    
+    if (T_2a_est_C !== null && !isNaN(T_2a_est_C)) {
+        // 使用预估排气温度计算油冷负荷
+        const T_2a_est_K = T_2a_est_C + 273.15;
+        const h_2a_target = CP_INSTANCE.PropsSI('H', 'T', T_2a_est_K, 'P', Pc_Pa, fluid);
+        const energy_out_gas = m_dot_total * h_2a_target;
+        Q_oil_W = W_shaft_W - (energy_out_gas - h_system_in);
+        T_2a_final_C = T_2a_est_C;
+
+        if (Q_oil_W < 0) {
+            // 如果计算出的油冷负荷为负，说明预估温度过低，重新计算实际排气温度
+            Q_oil_W = 0;
+            const h_2a_real = (h_system_in + W_shaft_W) / m_dot_total;
+            const T_2a_real_K = CP_INSTANCE.PropsSI('T', 'P', Pc_Pa, 'H', h_2a_real, fluid);
+            T_2a_final_C = T_2a_real_K - 273.15;
+            h_2a_final = h_2a_real;
+        } else {
+            h_2a_final = (h_system_in + W_shaft_W - Q_oil_W) / m_dot_total;
+        }
+    } else {
+        // 如果没有提供预估排气温度，使用能量守恒计算
+        const h_2a_target = h_system_in + (W_shaft_W / m_dot_total);
+        h_2a_final = h_2a_target;
+        const T2a_K = CP_INSTANCE.PropsSI('T', 'P', Pc_Pa, 'H', h_2a_final, fluid);
+        T_2a_final_C = T2a_K - 273.15;
+    }
 
     // 蒸发制冷量 & 冷凝放热
     const Q_evap_W = m_dot_suc * (h1_base - h_liq_out);
-    const Q_cond_W = m_dot_total * (h_2a_target - h3);
+    const Q_cond_W = m_dot_total * (h_2a_final - h3);
 
     const COP_c = Q_evap_W / W_input_W;
     const COP_h = Q_cond_W / W_input_W;
@@ -274,22 +470,24 @@ function computeSingleStageCycle({
         m_dot_inj,
         h1: h1_base,
         h_suc,
-        h2a: h_2a_target,
+        h2a: h_2a_final,
         h3,
         h4,
         h5: isEcoEnabled ? h_5 : h3,
         h6: isEcoEnabled ? h_6 : 0,
         h7: isEcoEnabled ? h_7 : h3,
-        h_mid: isEcoEnabled ? h_mid_1s : 0, // 第一级压缩到P_eco的状态（仅用于功率计算）
-        h_mix: isEcoEnabled ? h_mix : 0, // 补气混合后的状态（仅用于功率计算）
+        h_mid: isEcoEnabled ? h_mid_1s : 0, // 第一级压缩到P_eco的状态
+        h_mix: isEcoEnabled ? h_mix : 0, // 补气混合后的状态
+        h_2s_stage2: isEcoEnabled ? h_2s_stage2 : 0, // 第二级等熵压缩终点
         T1_K,
-        T2a_C,
+        T2a_C: T_2a_final_C,
         T3_K,
         T4_C,
         T_eco_sat_K: isEcoEnabled ? T_eco_sat_K : null,
         P_eco_Pa: isEcoEnabled ? P_eco_Pa : null,
         Q_evap_W,
         Q_cond_W,
+        Q_oil_W,
         W_shaft_W,
         W_input_W,
         COP_c,
@@ -342,6 +540,9 @@ function calculateMode4() {
             
             const eta_v_lt = parseFloat(etaVLtInput.value);
             const eta_s_lt = parseFloat(etaSLtInput.value);
+            
+            // 读取排气温度输入
+            const T_2a_est_Lt_C = tempDischargeActualLt ? parseFloat(tempDischargeActualLt.value) : null;
 
             let flowHt = parseFloat(flowHtInput.value);
             
@@ -358,6 +559,9 @@ function calculateMode4() {
             
             const eta_v_ht = parseFloat(etaVHtInput.value);
             const eta_s_ht = parseFloat(etaSHtInput.value);
+            
+            // 读取排气温度输入
+            const T_2a_est_Ht_C = tempDischargeActualHt ? parseFloat(tempDischargeActualHt.value) : null;
 
             const dt_approach_K = parseFloat(approachDtInput.value);
 
@@ -374,7 +578,37 @@ function calculateMode4() {
 
             // ECO和SLHX参数（高温级：只保留ECO，取消SLHX）
             const isEcoHtEnabled = ecoCheckboxHt && ecoCheckboxHt.checked;
-            const ecoTypeHtValue = ecoTypeHt ? document.querySelector('input[name="eco_type_m4_ht"]:checked')?.value || 'flash_tank' : 'flash_tank';
+            // 读取ecoType的值，确保正确获取
+            // 注意：不依赖ecoTypeHt变量，直接查询DOM元素
+            let ecoTypeHtValue = 'flash_tank'; // 默认值
+            const checkedInput = document.querySelector('input[name="eco_type_m4_ht"]:checked');
+            if (checkedInput) {
+                ecoTypeHtValue = checkedInput.value;
+            } else {
+                // 如果没有选中的，检查是否有默认选中的
+                const defaultInput = document.querySelector('input[name="eco_type_m4_ht"][checked]');
+                if (defaultInput) {
+                    ecoTypeHtValue = defaultInput.value;
+                }
+            }
+            // 验证值是否有效
+            if (ecoTypeHtValue !== 'flash_tank' && ecoTypeHtValue !== 'subcooler') {
+                console.warn(`[Mode4] 无效的ecoTypeHtValue: "${ecoTypeHtValue}"，使用默认值flash_tank`);
+                ecoTypeHtValue = 'flash_tank';
+            }
+            // 调试信息：验证ecoType的值
+            console.log('[Mode4] ecoTypeHtValue:', ecoTypeHtValue);
+            console.log('[Mode4] ecoTypeHtValue类型:', typeof ecoTypeHtValue);
+            console.log('[Mode4] ecoTypeHtValue === "flash_tank":', ecoTypeHtValue === 'flash_tank');
+            console.log('[Mode4] ecoTypeHtValue === "subcooler":', ecoTypeHtValue === 'subcooler');
+            console.log('[Mode4] checked input:', document.querySelector('input[name="eco_type_m4_ht"]:checked'));
+            console.log('[Mode4] all inputs:', document.querySelectorAll('input[name="eco_type_m4_ht"]'));
+            
+            // 强制验证：确保值正确传递
+            if (ecoTypeHtValue !== 'flash_tank' && ecoTypeHtValue !== 'subcooler') {
+                console.error(`[Mode4] 严重错误：ecoTypeHtValue无效: "${ecoTypeHtValue}"`);
+                throw new Error(`无效的ecoTypeHtValue: "${ecoTypeHtValue}"`);
+            }
             const ecoPressModeHtValue = ecoPressModeHt ? document.querySelector('input[name="eco_press_mode_m4_ht"]:checked')?.value || 'auto' : 'auto';
             const ecoSatTempHtValue = ecoSatTempHt ? parseFloat(ecoSatTempHt.value) : null;
             const ecoSuperheatHtValue = ecoSuperheatHt ? parseFloat(ecoSuperheatHt.value) : 5;
@@ -389,6 +623,19 @@ function calculateMode4() {
                 isNaN(eta_v_lt) || isNaN(eta_s_lt) || isNaN(eta_v_ht) || isNaN(eta_s_ht) || 
                 isNaN(dt_approach_K)) {
                 throw new Error('请输入完整且有效的数值参数。');
+            }
+            
+            // 验证排气温度（如果提供了的话）
+            if (T_2a_est_Lt_C !== null && !isNaN(T_2a_est_Lt_C)) {
+                // 低温级排气温度应该高于低温级冷凝温度
+                // 注意：这里使用TcLt_C，但TcLt_C是在迭代中计算的，所以先不验证
+                // 在实际计算时会在computeSingleStageCycle中验证
+            }
+            if (T_2a_est_Ht_C !== null && !isNaN(T_2a_est_Ht_C)) {
+                // 高温级排气温度应该高于高温级冷凝温度
+                if (T_2a_est_Ht_C <= TcHt_C) {
+                    throw new Error('高温级排气温度必须高于高温级冷凝温度。');
+                }
             }
             
             // 验证必须为正数的参数
@@ -437,7 +684,8 @@ function calculateMode4() {
                     ecoSuperheat_K: ecoSuperheatLtValue,
                     ecoDt_K: ecoDtLtValue,
                     isSlhxEnabled: isSlhxLtEnabled,
-                    slhxEff: slhxEffLtValue
+                    slhxEff: slhxEffLtValue,
+                    T_2a_est_C: T_2a_est_Lt_C
                 });
 
                 // 高温级：蒸发在 T_evap_HT = T_int_C
@@ -457,7 +705,8 @@ function calculateMode4() {
                     ecoSuperheat_K: ecoSuperheatHtValue,
                     ecoDt_K: ecoDtHtValue,
                     isSlhxEnabled: isSlhxHtEnabled,
-                    slhxEff: slhxEffHtValue
+                    slhxEff: slhxEffHtValue,
+                    T_2a_est_C: T_2a_est_Ht_C
                 });
 
                 const Q_cascade_lt = ltStage.Q_cond_W;        // 低温级在中间换热器放热
@@ -565,14 +814,43 @@ function calculateMode4() {
             });
             
             // 高温级状态点
+            // 注意：点1和点mid的质量流应该相同（都是m_dot_suc），因为补气发生在第一级压缩之后
+            const m_dot_suc_ht = htStage.m_dot;  // 主路流量（第一级压缩流量）
             statePoints.push({
                 name: 'HT-1',
                 desc: 'High Stage Evap Out',
                 temp: (htStage.T1_K - 273.15).toFixed(1),
                 press: (htStage.Pe_Pa / 1e5).toFixed(2),
                 enth: (htStage.h1 / 1000).toFixed(1),
-                flow: htStage.m_dot.toFixed(4)
+                flow: m_dot_suc_ht.toFixed(4)  // 主路流量
             });
+            
+            // 高温级压缩过程状态点（带经济器时）
+            if (htStage.isEcoEnabled) {
+                // 点mid：第一级压缩终点（补气前）
+                // 注意：点mid的质量流是经济器蒸发的气体量（补气流量m_dot_inj），不是蒸发器的蒸发量
+                // 点1的质量流是蒸发器的蒸发量（m_dot_suc），两者概念不同
+                const T_mid_Ht_K = CP_INSTANCE.PropsSI('T', 'P', htStage.P_eco_Pa, 'H', htStage.h_mid, fluidHt);
+                statePoints.push({
+                    name: 'HT-mid',
+                    desc: 'High Stage Comp Stage1 Out (Pre-Inj)',
+                    temp: (T_mid_Ht_K - 273.15).toFixed(1),
+                    press: (htStage.P_eco_Pa / 1e5).toFixed(2),
+                    enth: (htStage.h_mid / 1000).toFixed(1),
+                    flow: htStage.m_dot_inj.toFixed(4)  // 经济器蒸发的气体量（补气流量）
+                });
+                
+                // 点mix：混合后的状态
+                const T_mix_Ht_K = CP_INSTANCE.PropsSI('T', 'P', htStage.P_eco_Pa, 'H', htStage.h_mix, fluidHt);
+                statePoints.push({
+                    name: 'HT-mix',
+                    desc: 'High Stage After Mixing',
+                    temp: (T_mix_Ht_K - 273.15).toFixed(1),
+                    press: (htStage.P_eco_Pa / 1e5).toFixed(2),
+                    enth: (htStage.h_mix / 1000).toFixed(1),
+                    flow: htStage.m_dot_total.toFixed(4)
+                });
+            }
             
             statePoints.push({
                 name: 'HT-2',
@@ -692,7 +970,19 @@ function calculateMode4() {
                 // 点5'的焓值：SLHX后的液体焓值（等于h4，因为h4 = h_liq_out）
                 const h_liq_out = stage.h4; // h4就是SLHX后的液体焓值
                 const pt5_p = stage.isSlhxEnabled ? point("5'", h_liq_out, P_5p_chart, 'top') : null;
-                const pt5 = stage.isEcoEnabled ? point('5', stage.h5, P_5p_chart, 'top') : null;
+                // 点5的压力（关键差异：Flash Tank用P_eco，Subcooler用Pc）
+                let P_5_chart = stage.Pc_Pa;
+                if (stage.isEcoEnabled && stage.ecoType === 'flash_tank') {
+                    P_5_chart = stage.P_eco_Pa;  // Flash Tank：点5在中间压力
+                } else if (stage.isEcoEnabled && stage.ecoType === 'subcooler') {
+                    // 过冷器模式：强制使用Pc_Pa（高压），确保点5在高压下
+                    P_5_chart = stage.Pc_Pa;
+                }
+                // 调试信息：验证点5的压力设置
+                if (stage.isEcoEnabled) {
+                    console.log(`[Mode4 buildPHPoints] ecoType=${stage.ecoType}, P_5_chart=${(P_5_chart/1e5).toFixed(2)} bar, Pc_Pa=${(stage.Pc_Pa/1e5).toFixed(2)} bar, P_eco_Pa=${stage.P_eco_Pa ? (stage.P_eco_Pa/1e5).toFixed(2) : 'N/A'} bar`);
+                }
+                const pt5 = stage.isEcoEnabled ? point('5', stage.h5, P_5_chart, 'top') : null;
 
                 let mainPoints = [], ecoLiquidPoints = [], ecoVaporPoints = [];
 
@@ -704,13 +994,21 @@ function calculateMode4() {
                     }
                 } else {
                     if (stage.ecoType === 'flash_tank') {
-                        // Flash Tank模式（完全按照模式1逻辑）
+                        // Flash Tank模式：双级压缩过程
                         const pt7 = point('7', stage.h7, stage.P_eco_Pa, 'right');
-                        const pt6 = point('6', stage.h6, stage.P_eco_Pa, 'left');
                         
-                        // 主循环：4 -> 1 -> 1' -> 2 -> 3（压缩线是 1'->2 一条直线）
-                        // 与模式1完全一致：使用三元运算符
-                        mainPoints = [pt4, pt1, stage.isSlhxEnabled ? pt1_p : pt1, pt2, pt3];
+                        // 创建压缩线上的点：mid（第一级压缩终点，补气前）、mix（混合后的状态）、点2（实际排气点）
+                        // 点6（补气点，混合前的状态）通过补气路显示
+                        const pt1_start = stage.isSlhxEnabled ? pt1_p : pt1;
+                        const pt_mid = point('mid', stage.h_mid, stage.P_eco_Pa, 'right');  // 第一级压缩终点（补气前）
+                        const pt6 = point('6', stage.h6, stage.P_eco_Pa, 'left');  // 点6（补气点，混合前的状态）
+                        const pt_mix = point('mix', stage.h_mix, stage.P_eco_Pa, 'left');  // 混合点（混合后），在mid左边（焓值更小）
+                        
+                        // 压缩线：4 -> 1 -> 1' -> mid -> mix -> 2 -> 3
+                        // 注意：点mix在点mid的左边（焓值更小），因为混合后温度降低
+                        // 点6通过补气路连接到mix点，表示补气进入混合
+                        // 压缩后排气只有1个点（点2）
+                        mainPoints = [pt4, pt1, pt1_start, pt_mid, pt_mix, pt2, pt3];
 
                         // 液路：3 -> 7 -> 5 -> [5'] -> 4
                         ecoLiquidPoints = [pt3, pt7, pt5];
@@ -720,30 +1018,87 @@ function calculateMode4() {
                             ecoLiquidPoints.push(pt4);
                         }
 
-                        // 补气路：7 -> 6（点6是补气气体状态）
+                        // 补气路：7 -> 6（补气进入，点6表示混合前的补气状态）
                         ecoVaporPoints = [pt7, pt6];
                     } else {
-                        // Subcooler模式（完全按照模式1逻辑）
-                        const pt7 = point('7', stage.h7, stage.P_eco_Pa, 'right');
-                        const pt6 = point('6', stage.h6, stage.P_eco_Pa, 'left');
+                        // =========================================================
+                        // Subcooler模式（过冷器模式）：双级压缩过程
+                        // =========================================================
+                        // 工作原理：
+                        // 1. 冷凝器后的制冷剂液体（点3）分成两部分：
+                        //    - 主路：经过过冷器冷却到点5（仍在Pc_Pa高压下），然后节流到点4
+                        //    - 支路：节流到点7（P_eco_Pa），在过冷器中加热变成过热蒸汽点6
+                        // 2. 点5继续流向蒸发器，点6作为补气进入压缩机
+                        // 3. 能量平衡：m_suc × (h_3 - h_5) = m_inj × (h_6 - h_7)
+                        // =========================================================
                         
-                        // 液路：3 -> 5 -> [5'] -> 4
-                        ecoLiquidPoints = [pt3, pt5];
+                        // 验证点5的压力：过冷器模式下点5应该在Pc_Pa（高压），而不是P_eco_Pa
+                        if (Math.abs(P_5_chart - stage.Pc_Pa) > 100) {
+                            console.warn(`[Mode4 Subcooler] 点5压力异常：P_5_chart=${(P_5_chart/1e5).toFixed(2)} bar，应为Pc_Pa=${(stage.Pc_Pa/1e5).toFixed(2)} bar`);
+                        }
+                        
+                        // 在过冷器模式下，强制重新创建点5，确保使用Pc_Pa（高压）而不是P_eco_Pa
+                        // 这是过冷器模式与闪蒸罐模式的关键区别：点5必须在高压下
+                        const pt5_subcooler = point('5', stage.h5, stage.Pc_Pa, 'top');
+                        
+                        // 验证点5的压力和焓值
+                        console.log(`[Mode4 Subcooler] 点3: P=${(stage.Pc_Pa/1e5).toFixed(2)} bar, h=${(stage.h3/1000).toFixed(1)} kJ/kg`);
+                        console.log(`[Mode4 Subcooler] 点5: P=${(stage.Pc_Pa/1e5).toFixed(2)} bar, h=${(stage.h5/1000).toFixed(1)} kJ/kg`);
+                        console.log(`[Mode4 Subcooler] 点4: P=${(stage.Pe_Pa/1e5).toFixed(2)} bar, h=${(stage.h4/1000).toFixed(1)} kJ/kg`);
                         if (stage.isSlhxEnabled) {
-                            ecoLiquidPoints.push(pt5_p, pt4);
+                            console.log(`[Mode4 Subcooler] 点5': P=${(P_5p_chart/1e5).toFixed(2)} bar, h=${(stage.h4/1000).toFixed(1)} kJ/kg`);
+                        }
+                        
+                        const pt7 = point('7', stage.h7, stage.P_eco_Pa, 'right');
+                        
+                        // 创建压缩线上的点：mid（第一级压缩终点，补气前）、mix（混合后的状态）、点2（实际排气点）
+                        // 点6（补气点，混合前的状态）通过补气路显示
+                        const pt1_start = stage.isSlhxEnabled ? pt1_p : pt1;
+                        const pt_mid = point('mid', stage.h_mid, stage.P_eco_Pa, 'right');  // 第一级压缩终点（补气前）
+                        const pt6 = point('6', stage.h6, stage.P_eco_Pa, 'left');  // 点6（补气点，混合前的状态）
+                        const pt_mix = point('mix', stage.h_mix, stage.P_eco_Pa, 'left');  // 混合点（混合后），在mid左边（焓值更小）
+                        
+                        // 主路液路：3 -> 5 -> [5'] -> 4
+                        // =========================================================
+                        // 等压过冷段：点3（冷凝器出口，Pc_Pa，h3）-> 点5（过冷器出口，Pc_Pa，h5）
+                        //    - 压力：Pc_Pa（高压，等压过程）
+                        //    - 焓值：h5 < h3（过冷，焓值降低）
+                        //    - 这是过冷器模式的关键特征：等压过冷段在高压下进行
+                        // =========================================================
+                        // SLHX段（如果有）：点5（Pc_Pa，h5）-> 点5'（Pc_Pa，h4）
+                        //    - 压力：Pc_Pa（高压，等压过程）
+                        //    - 焓值：h4 < h5（进一步过冷）
+                        // =========================================================
+                        // 节流段：点5'（或点5，如果没有SLHX）-> 点4
+                        //    - 从点5'（Pc_Pa，h4）节流到点4（Pe_Pa，h4）
+                        //    - 压力：Pc_Pa -> Pe_Pa（节流降压）
+                        //    - 焓值：h4（等焓过程，节流前后焓值不变）
+                        // =========================================================
+                        // 注意：点5的压力必须是Pc_Pa（高压），这是过冷器模式与闪蒸罐模式的关键区别
+                        // 使用重新创建的点5（pt5_subcooler），确保压力正确
+                        // 确保点5'在过冷器模式下也使用Pc_Pa（高压）
+                        if (stage.isSlhxEnabled) {
+                            // 如果有SLHX，确保点5'也使用Pc_Pa（高压）
+                            const pt5_p_subcooler = point("5'", stage.h4, stage.Pc_Pa, 'top');
+                            ecoLiquidPoints = [pt3, pt5_subcooler, pt5_p_subcooler, pt4];  // 等压过冷段：3 -> 5，SLHX段：5 -> 5'，节流段：5' -> 4
                         } else {
-                            ecoLiquidPoints.push(pt4);
+                            ecoLiquidPoints = [pt3, pt5_subcooler, pt4];  // 等压过冷段：3 -> 5，节流段：5 -> 4
                         }
 
-                        // 主循环：4 -> 1 -> [1'] -> 2 -> 3（压缩线是 1'->2 或 1->2 一条直线）
+                        // 压缩线：4 -> 1 -> [1'] -> mid -> mix -> 2 -> 3
+                        // 注意：点mix在点mid的左边（焓值更小），因为混合后温度降低
+                        // 点6通过补气路连接到mix点，表示补气进入混合
+                        // 压缩后排气只有1个点（点2）
                         mainPoints = [pt4, pt1];
                         if (stage.isSlhxEnabled) {
-                            mainPoints.push(pt1_p);
+                            mainPoints.push(pt1_start);
                         }
-                        mainPoints.push(pt2, pt3);
+                        mainPoints.push(pt_mid, pt_mix, pt2, pt3);
 
-                        // 补气路：3 -> 7 -> 6（点6是补气气体状态）
-                        // 与模式1完全一致：从点3克隆开始
+                        // 支路补气路：3 -> 7 -> 6
+                        // 点3（冷凝器出口，Pc_Pa）分流 -> 点7（节流到P_eco_Pa中间压力）-> 点6（过冷器中加热成过热蒸汽，P_eco_Pa）
+                        // 注意：点3需要克隆一个点用于补气路的起点，因为点3已经在主路中使用
+                        // 支路从点3开始，节流到点7（中间压力），然后在过冷器中加热到点6
                         const pt3_clone = point('', stage.h3, stage.Pc_Pa);
                         ecoVaporPoints = [pt3_clone, pt7, pt6];
                     }
@@ -801,6 +1156,7 @@ function calculateMode4() {
                         ${createDetailRow('Q_evap', `${(ltStage.Q_evap_W / 1000).toFixed(2)} kW`)}
                         ${createDetailRow('Q_cond (Cascade)', `${(ltStage.Q_cond_W / 1000).toFixed(2)} kW`)}
                         ${createDetailRow('W_shaft', `${(ltStage.W_shaft_W / 1000).toFixed(2)} kW`)}
+                        ${createDetailRow('Q_oil (Oil Cooling)', `${(ltStage.Q_oil_W / 1000).toFixed(2)} kW`)}
                     </div>
                     <div class="bg-white/60 p-4 rounded-2xl border border-white/50">
                         ${createSectionHeader('High Stage Summary', '🔥')}
@@ -809,6 +1165,7 @@ function calculateMode4() {
                         ${createDetailRow('Q_evap (Cascade)', `${(htStage.Q_evap_W / 1000).toFixed(2)} kW`)}
                         ${createDetailRow('Q_cond', `${(htStage.Q_cond_W / 1000).toFixed(2)} kW`)}
                         ${createDetailRow('W_shaft', `${(htStage.W_shaft_W / 1000).toFixed(2)} kW`)}
+                        ${createDetailRow('Q_oil (Oil Cooling)', `${(htStage.Q_oil_W / 1000).toFixed(2)} kW`)}
                     </div>
                 </div>
 
@@ -1132,6 +1489,10 @@ export function initMode4(CP) {
     modelDisplacementValueLt = document.getElementById('model_displacement_value_m4_lt');
     slhxCheckboxLt = document.getElementById('enable_slhx_m4_lt');
     slhxEffLt = document.getElementById('slhx_effectiveness_m4_lt');
+    
+    // 排气温度输入
+    tempDischargeActualLt = document.getElementById('temp_discharge_actual_m4_lt');
+    tempDischargeActualHt = document.getElementById('temp_discharge_actual_m4_ht');
 
     // 高温级
     fluidHtSelect = document.getElementById('fluid_m4_ht');

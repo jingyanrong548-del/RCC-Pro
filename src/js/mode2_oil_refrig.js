@@ -426,15 +426,22 @@ function calculateMode2() {
             // Work & Finalization
             // =========================================================
             let W_ideal_W = 0;
+            let h_mid_1s = 0, h_mix_s = 0, h_2s_stage2 = 0;  // 用于p-h图
             if (!isEcoEnabled) {
                 const h_2s = CP_INSTANCE.PropsSI('H', 'P', Pc_Pa, 'S', s_suc, fluid);
                 W_ideal_W = m_dot_suc * (h_2s - h_suc);
             } else {
-                const h_mid_1s = CP_INSTANCE.PropsSI('H', 'P', P_eco_Pa, 'S', s_suc, fluid);
+                h_mid_1s = CP_INSTANCE.PropsSI('H', 'P', P_eco_Pa, 'S', s_suc, fluid);
                 const W_s1 = m_dot_suc * (h_mid_1s - h_suc);
-                const h_mix_s = (m_dot_suc * h_mid_1s + m_dot_inj * h_6) / m_dot_total;
+                h_mix_s = (m_dot_suc * h_mid_1s + m_dot_inj * h_6) / m_dot_total;
+                
+                // 验证混合逻辑：h_mix_s应该小于h_mid_1s（因为h_6 < h_mid_1s）
+                if (h_mix_s >= h_mid_1s) {
+                    console.warn(`混合逻辑异常：h_mix_s (${h_mix_s.toFixed(1)} J/kg) >= h_mid_1s (${h_mid_1s.toFixed(1)} J/kg)，补气温度可能异常`);
+                }
+                
                 const s_mix = CP_INSTANCE.PropsSI('S', 'H', h_mix_s, 'P', P_eco_Pa, fluid);
-                const h_2s_stage2 = CP_INSTANCE.PropsSI('H', 'P', Pc_Pa, 'S', s_mix, fluid);
+                h_2s_stage2 = CP_INSTANCE.PropsSI('H', 'P', Pc_Pa, 'S', s_mix, fluid);
                 const W_s2 = m_dot_total * (h_2s_stage2 - h_mix_s);
                 W_ideal_W = W_s1 + W_s2;
             }
@@ -557,12 +564,15 @@ function calculateMode2() {
             const pt3 = point('3', h_3, Pc_Pa, 'top');
             const pt4 = point('4', h_liq_out, Pe_Pa, 'bottom'); 
             
-            // Explicit Logic for Point 5' chart pressure
+            // 点5'的压力（用于SLHX后的液体）
             let P_5p_chart = Pc_Pa;
             if (isEcoEnabled && ecoType === 'flash_tank') P_5p_chart = P_eco_Pa;
-            
             const pt5_p = isSlhxEnabled ? point("5'", h_liq_out, P_5p_chart, 'top') : null;
-            const pt5 = isEcoEnabled ? point('5', h_5, P_5p_chart, 'top') : null;
+            
+            // 点5的压力（关键差异：Flash Tank用P_eco，Subcooler用Pc）
+            let P_5_chart = Pc_Pa;
+            if (isEcoEnabled && ecoType === 'flash_tank') P_5_chart = P_eco_Pa;
+            const pt5 = isEcoEnabled ? point('5', h_5, P_5_chart, 'top') : null;
 
             let mainPoints = [], ecoLiquidPoints = [], ecoVaporPoints = [];
 
@@ -575,48 +585,54 @@ function calculateMode2() {
             } else {
                 if (ecoType === 'flash_tank') {
                     const pt7 = point('7', h_7, P_eco_Pa, 'right');
-                    const pt6 = point('6', h_6, P_eco_Pa, 'left');
                     
-                    // Flash Tank High Side: 1'->2->3
-                    // [Bug Fix v7.4.4] Explicitly include pt3 in main points to close 2-3 line
-                    if (isSlhxEnabled) mainPoints = [pt1_p, pt2, pt3];
-                    else mainPoints = [pt1, pt2, pt3];
+                    // 创建压缩线上的点：mid（第一级压缩终点，补气前）、mix（混合后的状态）、点2（实际排气点）
+                    // 点6（补气点，混合前的状态）通过补气路显示
+                    const pt1_start = isSlhxEnabled ? pt1_p : pt1;
+                    const pt_mid = point('mid', h_mid_1s, P_eco_Pa, 'right');  // 第一级压缩终点（补气前）
+                    const pt6 = point('6', h_6, P_eco_Pa, 'left');  // 点6（补气点，混合前的状态）
+                    const pt_mix = point('mix', h_mix_s, P_eco_Pa, 'left');  // 混合点（混合后），在mid左边（焓值更小）
+                    
+                    // 压缩线：4 -> 1 -> 1' -> mid -> mix -> 2 -> 3
+                    // 注意：点mix在点mid的左边（焓值更小），因为混合后温度降低
+                    // 点6通过补气路连接到mix点，表示补气进入混合
+                    // 压缩后排气只有1个点（点2）
+                    mainPoints = [pt4, pt1, pt1_start, pt_mid, pt_mix, pt2, pt3];
 
-                    // Liquid Side: 3->7->5->[5']->4
+                    // 液路：3 -> 7 -> 5 -> [5'] -> 4
                     ecoLiquidPoints = [pt3, pt7, pt5];
                     if (isSlhxEnabled) ecoLiquidPoints.push(pt5_p, pt4);
                     else ecoLiquidPoints.push(pt4);
-                    
-                    // Low Side Closing: 4 -> 1 ...
-                    // Since ECharts series are separate, we can't draw a single continuous line for everything easily.
-                    // We typically draw the High Pressure and Low Pressure parts in 'Main Cycle'.
-                    // To make it look continuous: 4 -> 1 -> 1' -> 2 -> 3
-                    // But for Flash Tank, the mass flow splits.
-                    // Visual fix: Draw the "Compressor Path" + "Condenser Path" + "Evap Path" in one go?
-                    // No, Flash Tank structure is physically split.
-                    // Best visual: 
-                    // Main: 4 -> 1 -> 1' -> 2 -> 3  (This traces the "outer" boundary)
-                    // Then Liquid/Injection lines fill the middle.
-                    
-                    // [Fix] Re-defining mainPoints to be the full outer loop for visual continuity
-                    mainPoints = [pt4, pt1, isSlhxEnabled?pt1_p:pt1, pt2, pt3];
 
-                    ecoVaporPoints = [pt7, pt6]; 
+                    // 补气路：7 -> 6（补气进入，点6表示混合前的补气状态）
+                    ecoVaporPoints = [pt7, pt6];
                 } else {
+                    // Subcooler模式：双级压缩过程
                     const pt7 = point('7', h_7, P_eco_Pa, 'right');
-                    const pt6 = point('6', h_6, P_eco_Pa, 'left');
                     
-                    // Subcooler Liquid: 3->5->[5']->4
+                    // 创建压缩线上的点：mid（第一级压缩终点，补气前）、mix（混合后的状态）、点2（实际排气点）
+                    // 点6（补气点，混合前的状态）通过补气路显示
+                    const pt1_start = isSlhxEnabled ? pt1_p : pt1;
+                    const pt_mid = point('mid', h_mid_1s, P_eco_Pa, 'right');  // 第一级压缩终点（补气前）
+                    const pt6 = point('6', h_6, P_eco_Pa, 'left');  // 点6（补气点，混合前的状态）
+                    const pt_mix = point('mix', h_mix_s, P_eco_Pa, 'left');  // 混合点（混合后），在mid左边（焓值更小）
+                    
+                    // 液路：3 -> 5 -> [5'] -> 4
                     ecoLiquidPoints = [pt3, pt5];
                     if (isSlhxEnabled) ecoLiquidPoints.push(pt5_p, pt4);
                     else ecoLiquidPoints.push(pt4);
-                    
+
+                    // 压缩线：4 -> 1 -> [1'] -> mid -> mix -> 2 -> 3
+                    // 注意：点mix在点mid的左边（焓值更小），因为混合后温度降低
+                    // 点6通过补气路连接到mix点，表示补气进入混合
+                    // 压缩后排气只有1个点（点2）
                     mainPoints = [pt4, pt1];
-                    if (isSlhxEnabled) mainPoints.push(pt1_p);
-                    // [Fix] Add pt3 to close condensation line 2->3
-                    mainPoints.push(pt2, pt3);
-                    
-                    // Injection Line: 3->7->6
+                    if (isSlhxEnabled) {
+                        mainPoints.push(pt1_start);
+                    }
+                    mainPoints.push(pt_mid, pt_mix, pt2, pt3);
+
+                    // 补气路：3 -> 7 -> 6（补气进入，点6表示混合前的补气状态）
                     const pt3_clone = point('', h_3, Pc_Pa);
                     ecoVaporPoints = [pt3_clone, pt7, pt6];
                 }
@@ -631,12 +647,41 @@ function calculateMode2() {
             });
 
             // --- HTML Table ---
+            // 注意：点1和点mid的质量流应该相同（都是m_dot_suc），因为补气发生在第一级压缩之后
             const statePoints = [
                 { name: '1', desc: 'Evap Out', temp: Te_C.toFixed(1), press: (Pe_Pa/1e5).toFixed(2), enth: (h_1/1000).toFixed(1), flow: m_dot_suc.toFixed(3) },
             ];
             if (isSlhxEnabled) {
                 statePoints.push({ name: "1'", desc: 'Comp In (SLHX)', temp: (T_suc_K-273.15).toFixed(1), press: (Pe_Pa/1e5).toFixed(2), enth: (h_suc/1000).toFixed(1), flow: m_dot_suc.toFixed(3) });
             }
+            
+            // 压缩过程状态点（带经济器时）
+            if (isEcoEnabled) {
+                // 点mid：第一级压缩终点（补气前）
+                // 注意：点mid的质量流是经济器蒸发的气体量（补气流量m_dot_inj），不是蒸发器的蒸发量
+                // 点1的质量流是蒸发器的蒸发量（m_dot_suc），两者概念不同
+                const T_mid_K = CP_INSTANCE.PropsSI('T', 'P', P_eco_Pa, 'H', h_mid_1s, fluid);
+                statePoints.push({
+                    name: 'mid',
+                    desc: 'Comp Stage1 Out (Pre-Inj)',
+                    temp: (T_mid_K - 273.15).toFixed(1),
+                    press: (P_eco_Pa / 1e5).toFixed(2),
+                    enth: (h_mid_1s / 1000).toFixed(1),
+                    flow: m_dot_inj.toFixed(3)  // 经济器蒸发的气体量（补气流量）
+                });
+                
+                // 点mix：混合后的状态
+                const T_mix_K = CP_INSTANCE.PropsSI('T', 'P', P_eco_Pa, 'H', h_mix_s, fluid);
+                statePoints.push({
+                    name: 'mix',
+                    desc: 'After Mixing',
+                    temp: (T_mix_K - 273.15).toFixed(1),
+                    press: (P_eco_Pa / 1e5).toFixed(2),
+                    enth: (h_mix_s / 1000).toFixed(1),
+                    flow: m_dot_total.toFixed(3)
+                });
+            }
+            
             statePoints.push(
                 { name: '2', desc: 'Discharge', temp: T_2a_final_C.toFixed(1), press: (Pc_Pa/1e5).toFixed(2), enth: (h_2a_final/1000).toFixed(1), flow: m_dot_total.toFixed(3) },
                 { name: '3', desc: 'Cond Out', temp: (T_3_K-273.15).toFixed(1), press: (Pc_Pa/1e5).toFixed(2), enth: (h_3/1000).toFixed(1), flow: m_dot_total.toFixed(3) }
