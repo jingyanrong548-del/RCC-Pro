@@ -10,6 +10,7 @@
     "recalculate": "重新计算（输入已更改）",
     "loading": "加载中",
     "loadingFailed": "物性库加载失败",
+    "underDevelopmentNote": "该模块正在开发中，敬请期待...",
     "selectBrand": "-- 选择品牌 --",
     "selectSeries": "-- 选择系列 --",
     "selectModel": "-- 选择型号 --",
@@ -25,7 +26,8 @@
     "twoStageSingle": "单机双级",
     "twoStageDouble": "双机双级",
     "ammoniaHeatpump": "氨热泵",
-    "twoStage": "双级"
+    "twoStage": "双级",
+    "underDevelopment": "正在编制中"
   },
   "mode2": {
     "title": "单级制冷热泵",

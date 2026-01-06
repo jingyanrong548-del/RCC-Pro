@@ -94,8 +94,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // 4. 定义需要被更新状态的元素
     const buttons = [
         document.getElementById('calc-button-mode-2'),
-        document.getElementById('calc-button-mode-3'),
-        document.getElementById('calc-button-mode-3-two-stage'),
+        // 气体压缩模块暂时禁用（正在编制中）
+        // document.getElementById('calc-button-mode-3'),
+        // document.getElementById('calc-button-mode-3-two-stage'),
         document.getElementById('calc-button-mode-4'),
         document.getElementById('calc-button-mode-5'),
         document.getElementById('calc-button-mode-6'),
@@ -104,8 +105,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const fluidInfos = [
         { select: document.getElementById('fluid_m2'), info: document.getElementById('fluid-info-m2') },
-        { select: document.getElementById('fluid_m3'), info: document.getElementById('fluid-info-m3') },
-        { select: document.getElementById('fluid_m3_two_stage'), info: document.getElementById('fluid-info-m3-two-stage') },
+        // 气体压缩模块暂时禁用（正在编制中）
+        // { select: document.getElementById('fluid_m3'), info: document.getElementById('fluid-info-m3') },
+        // { select: document.getElementById('fluid_m3_two_stage'), info: document.getElementById('fluid-info-m3-two-stage') },
         { select: document.getElementById('fluid_m4_lt'), info: document.getElementById('fluid-info-m4-lt') },
         { select: document.getElementById('fluid_m4_ht'), info: document.getElementById('fluid-info-m4-ht') },
         { select: document.getElementById('fluid_m5'), info: document.getElementById('fluid-info-m5') },
@@ -115,7 +117,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const buttonTexts = {
         'calc-button-mode-2': i18next.t('common.calculate'),
-        'calc-button-mode-3': i18next.t('common.calculate'),
+        // 气体压缩模块暂时禁用（正在编制中）
+        // 'calc-button-mode-3': i18next.t('common.calculate'),
         'calc-button-mode-4': i18next.t('common.calculate'),
         'calc-button-mode-5': i18next.t('common.calculate'),
         'calc-button-mode-6': i18next.t('common.calculate'),
@@ -130,8 +133,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 7. 在CoolProp加载成功后，才初始化依赖于它的计算模块
             initMode2(CP);
-            initMode3(CP);
-            initMode3TwoStage(CP);
+            // 气体压缩模块暂时禁用（正在编制中）
+            // initMode3(CP);
+            // initMode3TwoStage(CP);
             initMode4(CP);
             initMode5(CP);
             initMode6(CP);
@@ -154,8 +158,9 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // 10. [修复] 在所有模块都初始化完毕后，再手动触发一次初始的经验效率计算
             triggerMode2EfficiencyUpdate();
-            triggerMode3EfficiencyUpdate();
-            triggerMode3TwoStageEfficiencyUpdate();
+            // 气体压缩模块暂时禁用（正在编制中）
+            // triggerMode3EfficiencyUpdate();
+            // triggerMode3TwoStageEfficiencyUpdate();
             triggerMode4EfficiencyUpdate();
             triggerMode5EfficiencyUpdate();
             triggerMode6EfficiencyUpdate();

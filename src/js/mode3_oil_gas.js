@@ -210,9 +210,25 @@ function initCompressorModelSelectorsM3() {
         const model = compressorModelM3.value;
 
         if (brand && series && model) {
-            const displacement = getDisplacementByModel(brand, series, model);
-            if (displacement !== null) {
+            const detail = getModelDetail(brand, series, model);
+            if (detail && detail.displacement !== null && detail.displacement !== undefined) {
+                const displacement = detail.displacement;
                 modelDisplacementValueM3.textContent = displacement.toFixed(0);
+                
+                // 对于GEA系列，显示转速范围和理论流量说明
+                if (brand === 'GEA Grasso' && detail.rpm_range && Array.isArray(detail.rpm_range) && detail.rpm_range.length === 2) {
+                    const [minRpm, maxRpm] = detail.rpm_range;
+                    modelDisplacementInfoM3.innerHTML = `
+                        <span class="font-bold">理论流量:</span> <span id="model_displacement_value_m3">${displacement.toFixed(0)}</span> m³/h
+                        <span class="ml-2 text-xs text-gray-600">(最大转速 ${maxRpm} RPM)</span>
+                        <br>
+                        <span class="text-xs text-gray-600">转速范围: ${minRpm}-${maxRpm} RPM</span>
+                    `;
+                } else {
+                    modelDisplacementInfoM3.innerHTML = `
+                        <span class="font-bold">理论排量:</span> <span id="model_displacement_value_m3">${displacement.toFixed(0)}</span> m³/h
+                    `;
+                }
                 modelDisplacementInfoM3.classList.remove('hidden');
                 
                 // Automatically switch to volume mode (流量模式)

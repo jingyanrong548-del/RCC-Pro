@@ -1827,10 +1827,20 @@ function initCompressorModelSelectorsM5() {
                     `;
                     modelDisplacementValue.textContent = detail.disp_lp.toFixed(0);
                 } else {
-                    // 其他品牌保持原有显示
-                    modelDisplacementInfo.innerHTML = `
-                        <span class="font-bold">理论排量:</span> <span id="model_displacement_value_m5">${baseDisp.toFixed(0)}</span> m³/h
-                    `;
+                    // 其他品牌保持原有显示，对于GEA系列添加转速范围
+                    if (brand === 'GEA Grasso' && detail.rpm_range && Array.isArray(detail.rpm_range) && detail.rpm_range.length === 2) {
+                        const [minRpm, maxRpm] = detail.rpm_range;
+                        modelDisplacementInfo.innerHTML = `
+                            <span class="font-bold">理论流量:</span> <span id="model_displacement_value_m5">${baseDisp.toFixed(0)}</span> m³/h
+                            <span class="ml-2 text-xs text-gray-600">(最大转速 ${maxRpm} RPM)</span>
+                            <br>
+                            <span class="text-xs text-gray-600">转速范围: ${minRpm}-${maxRpm} RPM</span>
+                        `;
+                    } else {
+                        modelDisplacementInfo.innerHTML = `
+                            <span class="font-bold">理论排量:</span> <span id="model_displacement_value_m5">${baseDisp.toFixed(0)}</span> m³/h
+                        `;
+                    }
                     modelDisplacementValue.textContent = baseDisp.toFixed(0);
                 }
 

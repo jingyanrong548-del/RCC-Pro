@@ -57,8 +57,21 @@
 
         <!-- 气体压缩模式主容器 -->
         <div id="tab-content-gas" class="tab-content hidden transition-opacity duration-300 ease-in-out">
-            <!-- 单级模式 -->
-            <div id="sub-tab-content-m3" class="sub-tab-content transition-opacity duration-300 ease-in-out opacity-100">
+            <!-- 正在编制中提示 -->
+            <div class="max-w-2xl mx-auto mt-20 mb-20">
+                <div class="glass-panel rounded-3xl p-12 text-center">
+                    <div class="mb-6">
+                        <svg class="w-20 h-20 mx-auto text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                    <h2 class="text-2xl font-bold text-gray-800 mb-4" data-i18n="nav.gasCompression">气体压缩</h2>
+                    <p class="text-lg text-gray-600 mb-2" data-i18n="nav.underDevelopment">正在编制中</p>
+                    <p class="text-sm text-gray-500" data-i18n="common.underDevelopmentNote">该模块正在开发中，敬请期待...</p>
+                </div>
+            </div>
+            <!-- 单级模式（已隐藏） -->
+            <div id="sub-tab-content-m3" class="sub-tab-content transition-opacity duration-300 ease-in-out opacity-100 hidden">
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-10 items-start relative">
                 
                 <div class="lg:col-span-7 space-y-6">
@@ -372,7 +385,8 @@
             </div>
             </div>
             <!-- 双级模式 -->
-            <div id="sub-tab-content-m3-two-stage" class="sub-tab-content hidden transition-opacity duration-300 ease-in-out opacity-0">
+            <!-- 双级模式（已隐藏） -->
+            <div id="sub-tab-content-m3-two-stage" class="sub-tab-content hidden transition-opacity duration-300 ease-in-out opacity-0 hidden">
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-10 items-start relative">
                 
                 <div class="lg:col-span-7 space-y-6">
@@ -2717,12 +2731,6 @@
                                 <input type="number" id="clearance_volume_m7" value="4.0" step="0.1" min="1" max="10" class="glass-input block w-full rounded-xl py-2 px-3 text-gray-900 font-medium">
                                 <p class="text-[10px] text-gray-400 mt-1 ml-1">GEA 典型值: 3-5%</p>
                             </div>
-
-                            <div class="pt-4 border-t border-gray-100/50">
-                                <label class="block text-xs font-bold text-orange-600 mb-1 ml-1">设定排气温度 T2a (°C)</label>
-                                <input type="number" id="temp_discharge_actual_m7" value="98" step="any" class="glass-input block w-full rounded-xl py-2 px-3 text-gray-900 font-bold bg-orange-50/50 border-orange-100 focus:ring-orange-200">
-                                <p class="text-[10px] text-gray-400 mt-1 ml-1">默认: 冷凝温度 + 25°C（自动调整）</p>
-                            </div>
                         </div>
 
                         <div class="glass-panel rounded-3xl p-6" id="water-circuit-panel-m7">
@@ -2787,13 +2795,13 @@
                                 <div class="bg-white/40 rounded-xl p-4 border border-gray-200/50" id="oil-cooler-config-m7">
                                     <div class="flex items-center justify-between mb-3">
                                         <div class="flex items-center space-x-2">
-                                            <label class="relative inline-flex items-center cursor-pointer">
-                                                <input type="checkbox" id="oil_cooler_enabled_m7" class="sr-only peer">
-                                                <div class="w-8 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-cyan-500"></div>
-                                            </label>
                                             <span class="text-sm font-semibold text-gray-800">油冷 (Oil Cooler)</span>
+                                            <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">始终启用</span>
                                         </div>
                                         <span class="text-[10px] text-gray-400">顺序: 2</span>
+                                    </div>
+                                    <div class="text-xs text-gray-600 mb-2 italic bg-blue-50 p-2 rounded">
+                                        <strong>说明：</strong>活塞压缩机的油冷用于带走摩擦热（约7%轴功率），这是物理必然，不需要用户选择。
                                     </div>
                                     <div class="grid grid-cols-2 gap-3 mt-3">
                                         <div>
@@ -2860,6 +2868,39 @@
                                     <div class="bg-gray-50/60 rounded-lg p-2 mt-3">
                                         <div class="text-[10px] text-gray-600">换热量: <span id="desuperheater_q_m7" class="font-bold text-cyan-700">--</span> kW</div>
                                         <div class="text-[10px] text-gray-600">出水温度: <span id="desuperheater_water_out_m7" class="font-bold text-cyan-700">--</span> °C</div>
+                                    </div>
+                                </div>
+
+                                <!-- 缸头冷却 (Cylinder Head Cooling) -->
+                                <div class="bg-white/40 rounded-xl p-4 border border-gray-200/50" id="cylinder-head-cooling-config-m7">
+                                    <div class="flex items-center justify-between mb-3">
+                                        <div class="flex items-center space-x-2">
+                                            <label class="relative inline-flex items-center cursor-pointer">
+                                                <input type="checkbox" id="cylinder_head_cooling_enabled_m7" class="sr-only peer">
+                                                <div class="w-8 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-cyan-500"></div>
+                                            </label>
+                                            <span class="text-sm font-semibold text-gray-800">缸头冷却 (Cylinder Head Cooling)</span>
+                                        </div>
+                                        <span class="text-[10px] text-gray-400">可选</span>
+                                    </div>
+                                    <div class="text-xs text-gray-600 mb-3 italic bg-amber-50 p-2 rounded border border-amber-200">
+                                        <strong>说明：</strong>GEA V 系列采用焊接机壳设计，吸气腔与排气腔完全隔离，通常无需额外缸头冷却。仅在排气温度接近报警线时作为选配使用。
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-3 mt-3">
+                                        <div>
+                                            <label class="block text-[10px] text-gray-500 mb-1">冷却水进水温度 (°C)</label>
+                                            <input type="number" id="cylinder_head_water_inlet_temp_m7" value="30" step="0.1" min="10" max="50" class="glass-input block w-full rounded-lg py-1.5 px-2 text-xs text-gray-900 font-medium">
+                                            <p class="text-[9px] text-red-600 mt-0.5 font-semibold">⚠️ 必须 > (蒸发温度 + 10K)</p>
+                                        </div>
+                                        <div>
+                                            <label class="block text-[10px] text-gray-500 mb-1">冷却水出水温度 (°C)</label>
+                                            <input type="number" id="cylinder_head_water_outlet_temp_m7" value="35" step="0.1" min="15" max="55" class="glass-input block w-full rounded-lg py-1.5 px-2 text-xs text-gray-900 font-medium">
+                                            <p class="text-[9px] text-gray-400 mt-0.5">典型温升: 5-10 K</p>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50/60 rounded-lg p-2 mt-3">
+                                        <div class="text-[10px] text-gray-600">换热量: <span id="cylinder_head_q_m7" class="font-bold text-cyan-700">--</span> kW</div>
+                                        <div class="text-[10px] text-gray-600">可降低排气温度: <span class="font-bold text-cyan-700">约 15°C</span></div>
                                     </div>
                                 </div>
                             </div>

@@ -10,6 +10,7 @@
     "recalculate": "Recalculate (Input Changed)",
     "loading": "Loading...",
     "loadingFailed": "Property Library Load Failed",
+    "underDevelopmentNote": "This module is under development, please stay tuned...",
     "selectBrand": "-- Select Brand --",
     "selectSeries": "-- Select Series --",
     "selectModel": "-- Select Model --",
@@ -25,7 +26,8 @@
     "twoStageSingle": "Two-Stage Single",
     "twoStageDouble": "Two-Stage Double",
     "ammoniaHeatpump": "Ammonia Heat Pump",
-    "twoStage": "Two Stage"
+    "twoStage": "Two Stage",
+    "underDevelopment": "Under Development"
   },
   "mode2": {
     "title": "Single Stage Refrigeration",

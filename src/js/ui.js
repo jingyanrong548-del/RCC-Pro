@@ -175,9 +175,22 @@ export function initUI() {
         if (mainIdx === 0) {
             switchSubTab(0);
         }
-        // 如果切换到气体压缩模式，默认显示第一个子模式（单级）
+        // 如果切换到气体压缩模式，隐藏子导航（正在编制中）
         if (mainIdx === 1) {
-            switchGasSubTab(0);
+            const gasSubNav = document.getElementById('gas-sub-nav');
+            if (gasSubNav) {
+                gasSubNav.classList.add('hidden');
+                gasSubNav.style.setProperty('display', 'none', 'important');
+            }
+            // 确保所有气体压缩子内容都被隐藏
+            const gasSubContents = ['sub-tab-content-m3', 'sub-tab-content-m3-two-stage'];
+            gasSubContents.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.classList.add('hidden');
+                    el.style.setProperty('display', 'none', 'important');
+                }
+            });
         }
     }
 
@@ -336,7 +349,22 @@ export function initUI() {
     // 主标签事件监听
     mainTabs.forEach((t, i) => {
         const btn = document.getElementById(t.btnId);
-        if (btn) btn.addEventListener('click', () => switchMainTab(i));
+        if (btn) {
+            // 禁用气体压缩按钮（正在编制中）
+            if (t.btnId === 'tab-btn-gas') {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    // 显示提示信息
+                    alert(i18next.t('nav.underDevelopment'));
+                });
+                // 添加禁用样式
+                btn.classList.add('opacity-50', 'cursor-not-allowed');
+                btn.style.pointerEvents = 'auto'; // 保持可点击以显示提示
+            } else {
+                btn.addEventListener('click', () => switchMainTab(i));
+            }
+        }
     });
 
     // 子标签事件监听
@@ -405,10 +433,17 @@ export function initUI() {
         });
     }
 
-    // 气体压缩子标签事件监听
+    // 气体压缩子标签事件监听（已禁用）
     gasSubTabs.forEach((t, i) => {
         const btn = document.getElementById(t.btnId);
-        if (btn) btn.addEventListener('click', () => switchGasSubTab(i));
+        if (btn) {
+            // 禁用气体压缩子标签按钮（正在编制中）
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
     });
 
     function loadRecord(rec) {

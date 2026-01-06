@@ -265,6 +265,85 @@ export function getModelDetail(brand, series, model) {
 }
 
 /**
+ * 根据制冷剂类型的排气温度限制配置
+ * 根据 GEA 服务手册和工程实践定义
+ * 这是主要限制，基于制冷剂物性（润滑油分解温度）
+ */
+export const DISCHARGE_TEMP_LIMITS_BY_REFRIGERANT = {
+    'R717': {  // 氨 (Ammonia)
+        warn: 140,  // °C
+        max: 155     // °C (绝对限制，超过此温度需要喷液或两级压缩)
+    },
+    'R744': {  // CO2
+        warn: 130,  // °C
+        max: 140     // °C
+    }
+};
+
+/**
+ * 压缩机系列排气温度限制配置（作为补充，基于硬件设计）
+ * 根据 GEA 服务手册和工程实践定义
+ */
+export const DISCHARGE_TEMP_LIMITS = {
+    // Standard V Series (NH3) - 标准氨系列
+    'Grasso V (25 bar)': {
+        warning: 140,  // °C
+        trip: 150      // °C
+    },
+    // V HP Series (Heat Pump) - 热泵系列
+    'Grasso V HP (40 bar)': {
+        warning: 150,  // °C
+        trip: 160      // °C
+    },
+    // V XHP Series (High Temp) - 高温系列
+    'Grasso V XHP (63 bar High Temp)': {
+        warning: 160,  // °C
+        trip: 170      // °C (绝对机械限制，根据 GEA 服务手册)
+    },
+    // 5HP Series (CO2) - CO2 系列
+    'Grasso 5HP (50 bar)': {
+        warning: 130,  // °C
+        trip: 140      // °C
+    }
+};
+
+/**
+ * 获取制冷剂类型的排气温度限制（主要方法）
+ * @param {string} fluid - 制冷剂名称，如 'R717', 'R744'
+ * @returns {{warn: number, max: number}|null} 返回限制对象，未找到返回 null
+ */
+export function getDischargeTempLimitsByRefrigerant(fluid) {
+    if (DISCHARGE_TEMP_LIMITS_BY_REFRIGERANT[fluid]) {
+        return DISCHARGE_TEMP_LIMITS_BY_REFRIGERANT[fluid];
+    }
+    
+    // 如果未找到，返回默认值（保守值，基于氨的限制）
+    return {
+        warn: 140,
+        max: 155
+    };
+}
+
+/**
+ * 获取压缩机系列的排气温度限制（补充方法，基于硬件设计）
+ * @param {string} brand - 品牌名称
+ * @param {string} series - 系列名称
+ * @returns {{warning: number, trip: number}|null} 返回限制对象，未找到返回 null
+ */
+export function getDischargeTempLimits(brand, series) {
+    // 直接匹配系列名称
+    if (DISCHARGE_TEMP_LIMITS[series]) {
+        return DISCHARGE_TEMP_LIMITS[series];
+    }
+    
+    // 如果未找到，返回默认值（保守值）
+    return {
+        warning: 140,
+        trip: 150
+    };
+}
+
+/**
  * 根据完整型号字符串查找理论排量（自动匹配品牌和系列）
  * @param {string} modelString - 完整型号，如 "LG12.5" 或 "VLG163D"
  * @returns {number|null} 理论排量 (m³/h)，未找到返回 null

@@ -24,7 +24,9 @@ import {
     getFilteredSeriesByBrand,
     getModelsBySeries, 
     getDisplacementByModel,
-    getModelDetail
+    getModelDetail,
+    getDischargeTempLimits,
+    getDischargeTempLimitsByRefrigerant
 } from './compressor_models.js';
 
 let CP_INSTANCE = null;
@@ -34,7 +36,6 @@ let lastCalculationData = null;
 let calcButtonM7, calcFormM7, printButtonM7, fluidSelectM7, fluidInfoDivM7;
 let resultsDesktopM7, resultsMobileM7, summaryMobileM7;
 let autoEffCheckboxM7, tempEvapM7, tempCondM7, etaVM7, etaSM7;
-let tempDischargeActualM7;
 let polyRefRpmInputM7, polyRefDispInputM7, vsdCheckboxM7, ratedRpmInputM7, polyCorrectionPanelM7;
 // Compressor Model Selectors
 let compressorBrandM7, compressorSeriesM7, compressorModelM7, modelDisplacementInfoM7, modelDisplacementValueM7;
@@ -42,9 +43,10 @@ let flowM3hM7;
 // Water Circuit Heat Exchangers
 let waterInletTempM7, waterOutletTempM7, waterFlowDisplayM7;
 let subcoolerEnabledM7, subcoolerApproachTempM7, subcoolerQM7, subcoolerWaterOutM7;
-let oilCoolerEnabledM7, oilCoolerApproachTempM7, oilCoolerQM7, oilCoolerWaterOutM7;
+let oilCoolerApproachTempM7, oilCoolerQM7, oilCoolerWaterOutM7;
 let condenserEnabledM7, condenserApproachTempM7, condenserQM7, condenserWaterOutM7;
 let desuperheaterEnabledM7, desuperheaterApproachTempM7, desuperheaterTargetTempM7, desuperheaterQM7, desuperheaterWaterOutM7;
+let cylinderHeadCoolingEnabledM7, cylinderHeadWaterInletTempM7, cylinderHeadWaterOutletTempM7, cylinderHeadQM7;
 
 // Button States
 const getBtnTextCalculate = () => i18next.t('mode2.calculatePerformance');
@@ -111,26 +113,30 @@ function updateAndDisplayEfficienciesM7() {
         if (!Pe_Pa || !Pc_Pa) return;
 
         // RCC Pro: 使用活塞压缩机容积效率计算
-        const T_suc_K = Te_C + 273.15 + (parseFloat(document.getElementById('superheat_m7').value) || 5);
+        // 修复：如果过热度输入0，按0.01进行计算
+        let superheat_K_eff = parseFloat(document.getElementById('superheat_m7').value);
+        if (superheat_K_eff === 0) superheat_K_eff = 0.01;
+        if (isNaN(superheat_K_eff)) superheat_K_eff = 5; // 如果未输入，使用默认值5
+        const T_suc_K = Te_C + 273.15 + superheat_K_eff;
         
         // 尝试从选中的压缩机型号获取余隙容积
         let clearance_factor = 0.04; // 默认值
         const brand = compressorBrandM7?.value;
         const series = compressorSeriesM7?.value;
         const model = compressorModelM7?.value;
-        if (brand && series && model) {
+        
+        // 修复：优先从UI输入获取余隙容积（如果用户手动输入了）
+        const clearanceInput = document.getElementById('clearance_volume_m7');
+        if (clearanceInput && clearanceInput.value !== '') {
+            const clearancePercent = parseFloat(clearanceInput.value);
+            if (!isNaN(clearancePercent) && clearancePercent > 0) {
+                clearance_factor = clearancePercent / 100.0;
+            }
+        } else if (brand && series && model) {
+            // 如果没有手动输入，才从压缩机型号获取
             const modelDetail = getModelDetail(brand, series, model);
             if (modelDetail && modelDetail.clearance_factor) {
                 clearance_factor = modelDetail.clearance_factor;
-            }
-        } else {
-            // 如果没有选择压缩机型号，尝试从UI输入获取
-            const clearanceInput = document.getElementById('clearance_volume_m7');
-            if (clearanceInput) {
-                const clearancePercent = parseFloat(clearanceInput.value);
-                if (!isNaN(clearancePercent) && clearancePercent > 0) {
-                    clearance_factor = clearancePercent / 100.0;
-                }
             }
         }
         
@@ -225,9 +231,25 @@ function initCompressorModelSelectorsM7() {
         const model = compressorModelM7.value;
 
         if (brand && series && model) {
-            const displacement = getDisplacementByModel(brand, series, model);
-            if (displacement !== null) {
+            const detail = getModelDetail(brand, series, model);
+            if (detail && detail.displacement !== null && detail.displacement !== undefined) {
+                const displacement = detail.displacement;
                 modelDisplacementValueM7.textContent = displacement.toFixed(0);
+                
+                // 对于GEA系列，显示转速范围和理论流量说明
+                if (brand === 'GEA Grasso' && detail.rpm_range && Array.isArray(detail.rpm_range) && detail.rpm_range.length === 2) {
+                    const [minRpm, maxRpm] = detail.rpm_range;
+                    modelDisplacementInfoM7.innerHTML = `
+                        <span class="font-bold">理论流量:</span> <span id="model_displacement_value_m7">${displacement.toFixed(0)}</span> m³/h
+                        <span class="ml-2 text-xs text-gray-600">(最大转速 ${maxRpm} RPM)</span>
+                        <br>
+                        <span class="text-xs text-gray-600">转速范围: ${minRpm}-${maxRpm} RPM</span>
+                    `;
+                } else {
+                    modelDisplacementInfoM7.innerHTML = `
+                        <span class="font-bold">理论排量:</span> <span id="model_displacement_value_m7">${displacement.toFixed(0)}</span> m³/h
+                    `;
+                }
                 modelDisplacementInfoM7.classList.remove('hidden');
                 
                 // Automatically switch to volume mode (流量定义)
@@ -764,9 +786,11 @@ function calculateMode7() {
             const fluid = 'R717'; // 固定为氨
             const Te_C = parseFloat(document.getElementById('temp_evap_m7').value);
             const Tc_C = parseFloat(document.getElementById('temp_cond_m7').value);
-            const superheat_K = parseFloat(document.getElementById('superheat_m7').value);
-            const subcooling_K = parseFloat(document.getElementById('subcooling_m7').value);
-            const T_2a_est_C = parseFloat(tempDischargeActualM7.value);
+            // 修复：如果过热度或过冷度输入0，都按0.01进行计算
+            let superheat_K = parseFloat(document.getElementById('superheat_m7').value);
+            if (superheat_K === 0) superheat_K = 0.01;
+            let subcooling_K = parseFloat(document.getElementById('subcooling_m7').value);
+            if (subcooling_K === 0) subcooling_K = 0.01;
             
             // VSD Inputs
             const isVsdEnabled = vsdCheckboxM7.checked;
@@ -776,8 +800,8 @@ function calculateMode7() {
 
             AppState.updateVSD(isVsdEnabled, ratedRpm, currentRpm);
 
-            if (isNaN(Te_C) || isNaN(Tc_C) || T_2a_est_C <= Tc_C) 
-                throw new Error("Invalid Temp Inputs (Discharge > Cond > Evap).");
+            if (isNaN(Te_C) || isNaN(Tc_C) || Tc_C <= Te_C) 
+                throw new Error("Invalid Temp Inputs (Cond > Evap).");
 
             // --- Common Physics (CoolProp SI Units) ---
             const T_evap_K = Te_C + 273.15;
@@ -854,7 +878,11 @@ function calculateMode7() {
                     m_dot_suc = V_th_m3_s * eta_v_input * rho_suc;
                     
                     eta_v_display = eta_v_input;
-                    eta_s_display = parseFloat(etaSM7.value); 
+                    eta_s_display = parseFloat(etaSM7.value);
+                    // 修复：添加等熵效率验证，确保效率设定起作用
+                    if (isNaN(eta_s_display) || eta_s_display <= 0 || eta_s_display > 1) {
+                        throw new Error("Invalid Isentropic Efficiency. Please enter a value between 0 and 1.");
+                    }
                     efficiency_info_text = isVsdEnabled ? `Geo (VSD @ ${currentRpm})` : "Standard Geometry";
 
                 } else {
@@ -906,19 +934,89 @@ function calculateMode7() {
             const T_2a_final_K = CP_INSTANCE.PropsSI('T', 'P', Pc_Pa, 'H', h_2a_final, fluid);
             let T_2a_final_C = T_2a_final_K - 273.15;
             
-            // 排气温度保护：如果超过 150°C，显示警告（氨的典型限制）
-            if (T_2a_final_C > 150) {
-                console.warn(`[RCC Pro] Discharge temperature (${T_2a_final_C.toFixed(1)}°C) exceeds 150°C. Please check input parameters or reduce pressure ratio.`);
+            // =========================================================
+            // RCC Pro: 排气温度限制检查（基于制冷剂类型和压缩机系列）
+            // =========================================================
+            let dischargeTempWarning = null;
+            let dischargeTempError = null;
+            let isOperatingPointInvalid = false;
+            
+            // 优先使用制冷剂类型的限制（主要限制，基于润滑油分解温度）
+            const fluidLimits = getDischargeTempLimitsByRefrigerant(fluid);
+            
+            // 获取压缩机系列的排气温度限制（补充限制，基于硬件设计）
+            const brand = compressorBrandM7?.value;
+            const series = compressorSeriesM7?.value;
+            const seriesLimits = getDischargeTempLimits(brand, series);
+            
+            // 使用更严格的限制（取两者中的较小值）
+            const effectiveWarning = Math.min(fluidLimits.warn, seriesLimits?.warning || fluidLimits.warn);
+            const effectiveMax = Math.min(fluidLimits.max, seriesLimits?.trip || fluidLimits.max);
+            
+            // 检查排气温度限制
+            if (T_2a_final_C > effectiveMax) {
+                // 超过最大限制：显示危险错误，标记操作点为无效
+                dischargeTempError = `DANGER: 排气温度 ${T_2a_final_C.toFixed(1)}°C 超过最大限制 ${effectiveMax}°C。存在润滑油分解风险！`;
+                isOperatingPointInvalid = true;
+                console.error(`[RCC Pro] ${dischargeTempError}`);
+            } else if (T_2a_final_C > effectiveWarning) {
+                // 超过警告限制：显示警告
+                dischargeTempWarning = `排气温度 ${T_2a_final_C.toFixed(1)}°C 超过警告限制 ${effectiveWarning}°C。请检查运行参数。`;
+                console.warn(`[RCC Pro] ${dischargeTempWarning}`);
             }
+            
+            // 修复：油冷始终启用（因为摩擦热总是存在）
+            // 活塞压缩机的油冷用于带走摩擦热（7%轴功率），这是物理必然，不需要用户选择
+            const isOilCoolerEnabled = true; // 始终启用，因为摩擦热总是存在
             
             // =========================================================
             // RCC Pro: 活塞压缩机油冷负荷计算（仅摩擦热）
             // =========================================================
             // 关键区别：与喷油螺杆不同，活塞压缩机的油冷仅带走摩擦热（Friction Heat），
-            // 而不是气体压缩热。摩擦热通常为轴功率的 5-7%。
+            // 而不是气体压缩热。摩擦热通常为轴功率的 5-8%。
             // 参考：GEA 样册提到"全流量油流经轴封以实现最大程度的冷却和延长寿命"
-            const FRICTION_LOSS_FACTOR = 0.06; // 摩擦损失系数（6%的轴功率）
+            const FRICTION_LOSS_FACTOR = 0.07; // 摩擦损失系数（7%的轴功率，根据荆工要求）
             const Q_oil_W = W_shaft_W * FRICTION_LOSS_FACTOR;
+            
+            // =========================================================
+            // RCC Pro: 缸头冷却负荷计算（可选/条件性）
+            // =========================================================
+            // 缸头冷却是可选功能，用于降低排气温度
+            // 根据荆工要求：冷却负荷约4%轴功率，可降低排气温度约15°C
+            let Q_cylinder_head_W = 0;
+            let T_2a_after_head_cooling_C = T_2a_final_C; // 缸头冷却后的排气温度
+            let cylinderHeadCoolingError = null; // 安全检查错误
+            const CYLINDER_HEAD_COOLING_FACTOR = 0.04; // 缸头冷却可带走4%轴功率（根据荆工要求）
+            const CYLINDER_HEAD_TEMP_REDUCTION = 15; // °C，缸头冷却可降低的排气温度
+            
+            // 读取缸头冷却配置
+            const isCylinderHeadCoolingEnabled = cylinderHeadCoolingEnabledM7?.checked || false;
+            
+            if (isCylinderHeadCoolingEnabled) {
+                // 读取缸头冷却水参数
+                const T_head_water_in = parseFloat(cylinderHeadWaterInletTempM7?.value) || 30;
+                
+                // =========================================================
+                // 安全检查：防止液击（Liquid Hammer）
+                // =========================================================
+                // 关键安全规则：进水温度必须 > (蒸发温度 + 10K)
+                // 如果水温太低，会导致吸气腔内结露甚至液化，引发严重的液击风险
+                const min_head_water_temp = Te_C + 10; // 最小允许进水温度
+                
+                if (T_head_water_in < min_head_water_temp) {
+                    // 安全检查失败：显示错误
+                    cylinderHeadCoolingError = `液击风险！缸头冷却进水温度 (${T_head_water_in.toFixed(1)}°C) 过低。必须 > ${min_head_water_temp.toFixed(1)}°C (蒸发温度 + 10K) 以防止吸气腔结露。`;
+                    console.error(`[RCC Pro] ${cylinderHeadCoolingError}`);
+                    // 如果安全检查失败，不启用缸头冷却
+                } else {
+                    // 安全检查通过，计算缸头冷却负荷
+                    Q_cylinder_head_W = W_shaft_W * CYLINDER_HEAD_COOLING_FACTOR;
+                    
+                    // 缸头冷却可以降低排气温度约15°C
+                    T_2a_after_head_cooling_C = Math.max(T_2a_final_C - CYLINDER_HEAD_TEMP_REDUCTION, Te_C + 20);
+                    // 确保降低后的温度不会低于合理值（至少比蒸发温度高20°C）
+                }
+            }
             
             // =========================================================
             // Water Circuit Heat Exchangers Calculation
@@ -933,9 +1031,11 @@ function calculateMode7() {
             const isSubcoolerEnabled = subcoolerEnabledM7?.checked || false;
             // RCC Pro: 活塞压缩机油冷用于润滑系统（冷却轴承、曲轴、轴封），不是喷油冷却
             // 对于热泵工况（V HP/XHP 系列），通常需要油冷却器以控制油温（ISO VG 68）
-            const isOilCoolerEnabled = oilCoolerEnabledM7?.checked !== false; // Default true
-            const isCondenserEnabled = condenserEnabledM7?.checked !== false; // Default true
+            // 修复：冷凝器是必配项，强制启用
+            const isCondenserEnabled = true; // 冷凝器必配
             const isDesuperheaterEnabled = desuperheaterEnabledM7?.checked || false;
+            
+            // 注意：isOilCoolerEnabled 已在前面声明，始终为 true（摩擦热总是存在）
             
             // Approach temperatures (K) - 逼近温差
             const approach_subcooler = parseFloat(subcoolerApproachTempM7?.value) || 5; // K
@@ -950,21 +1050,51 @@ function calculateMode7() {
             let Q_cond_W = 0;
             let Q_desuperheater_W = 0;
             
-            let h_2a_after_desuper = h_2a_final;
+            // =========================================================
+            // RCC Pro: 计算缸头冷却后的排气状态（如果启用）
+            // =========================================================
+            // 注意：缸头冷却在排气温度计算之后，降低过热器之前
+            // 如果启用缸头冷却，排气温度会降低，需要重新计算排气焓值
+            // 注意：T_2a_after_head_cooling_C 已在前面声明（第987行）
+            let h_2a_after_head_cooling = h_2a_final;
+            
+            if (isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError && Q_cylinder_head_W > 0) {
+                // 缸头冷却降低了排气温度，需要重新计算排气焓值
+                const T_2a_after_head_K = T_2a_after_head_cooling_C + 273.15;
+                h_2a_after_head_cooling = CP_INSTANCE.PropsSI('H', 'T', T_2a_after_head_K, 'P', Pc_Pa, fluid);
+            } else {
+                // 未启用或安全检查失败，使用原始排气状态
+                h_2a_after_head_cooling = h_2a_final;
+                // T_2a_after_head_cooling_C 已在前面初始化为 T_2a_final_C，无需重新赋值
+            }
+            
+            let h_2a_after_desuper = h_2a_after_head_cooling;
             let h_3_final = h_3;
-            let T_2a_after_desuper_C = T_2a_final_C;
+            let T_2a_after_desuper_C = T_2a_after_head_cooling_C;
             
             // Calculate Desuperheater (if enabled) - reduces discharge temperature
+            // 注意：降低过热器使用缸头冷却后的排气状态作为入口
             if (isDesuperheaterEnabled) {
                 const T_2a_target_K = T_desuperheater_target + 273.15;
                 h_2a_after_desuper = CP_INSTANCE.PropsSI('H', 'T', T_2a_target_K, 'P', Pc_Pa, fluid);
-                Q_desuperheater_W = m_dot_suc * (h_2a_final - h_2a_after_desuper);
+                Q_desuperheater_W = m_dot_suc * (h_2a_after_head_cooling - h_2a_after_desuper);
                 T_2a_after_desuper_C = T_desuperheater_target;
+            } else {
+                // 修复：如果未启用降低过热器，确保 h_2a_after_desuper 等于缸头冷却后的状态
+                h_2a_after_desuper = h_2a_after_head_cooling;
+                T_2a_after_desuper_C = T_2a_after_head_cooling_C;
+                Q_desuperheater_W = 0;
             }
             
-            // Calculate Condenser - uses desuperheater outlet if enabled
+            // Calculate Condenser - uses desuperheater outlet if enabled, or head cooling outlet
             if (isCondenserEnabled) {
-                Q_cond_W = m_dot_suc * (h_2a_after_desuper - h_3);
+                // 修复：确保使用正确的入口焓值
+                // 优先级：降低过热器出口 > 缸头冷却出口 > 原始排气
+                const h_cond_in = isDesuperheaterEnabled ? h_2a_after_desuper : 
+                                 (isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError ? h_2a_after_head_cooling : h_2a_final);
+                Q_cond_W = m_dot_suc * (h_cond_in - h_3);
+            } else {
+                Q_cond_W = 0;
             }
             
             // Calculate Subcooler (if enabled) - further subcools condenser outlet
@@ -983,8 +1113,8 @@ function calculateMode7() {
             }
             
             // RCC Pro: 活塞压缩机油冷负荷（仅摩擦热，不是气体冷却）
-            // 如果启用油冷器，使用计算的摩擦热；否则为0（假设自然冷却足够）
-            Q_oil_cooler_W = isOilCoolerEnabled ? Q_oil_W : 0;
+            // 油冷始终启用，因为摩擦热总是存在（由油泵决定，不是用户选择）
+            Q_oil_cooler_W = Q_oil_W; // 始终等于摩擦热，因为油冷始终启用
             
             // Calculate total heat transfer
             const Q_total_W = Q_subcooler_W + Q_oil_cooler_W + Q_cond_W + Q_desuperheater_W;
@@ -1007,10 +1137,10 @@ function calculateMode7() {
             const approachWarnings = []; // Collect warnings for display
             
             // Determine the last enabled heat exchanger
+            // 注意：油冷始终启用，所以不需要检查 isOilCoolerEnabled
             const lastHE = isDesuperheaterEnabled ? 'desuperheater' : 
                           (isCondenserEnabled ? 'condenser' : 
-                          (isOilCoolerEnabled ? 'oil_cooler' : 
-                          (isSubcoolerEnabled ? 'subcooler' : null)));
+                          (isSubcoolerEnabled ? 'subcooler' : 'oil_cooler')); // 油冷始终存在
             
             // 1. Subcooler (过冷器) - 顺序1
             if (isSubcoolerEnabled && Q_subcooler_W > 0) {
@@ -1050,7 +1180,8 @@ function calculateMode7() {
             
             // 2. Lubrication Oil Cooler (润滑系统油冷) - 顺序2
             // 注意：这是润滑系统的油冷却，仅带走摩擦热，不用于冷却压缩气体
-            if (isOilCoolerEnabled && Q_oil_cooler_W > 0) {
+            // 油冷始终启用（摩擦热总是存在）
+            if (Q_oil_cooler_W > 0) {
                 // 主要计算：根据换热量和流量计算热水出口温度
                 let T_water_out_oil = T_water_current;
                 if (m_dot_water > 0) {
@@ -1075,7 +1206,8 @@ function calculateMode7() {
                     approachSatisfied: T_water_current <= max_water_inlet
                 };
                 T_water_current = T_water_out_oil;
-            } else if (isOilCoolerEnabled) {
+            } else {
+                // 即使换热量为0，也记录油冷器状态（始终存在）
                 waterTemps.oil_cooler = {
                     inlet: T_water_current,
                     outlet: T_water_current,
@@ -1154,21 +1286,39 @@ function calculateMode7() {
                 Q_evap_W = m_dot_suc * (h_1 - h_liq_out_final);
             }
             
-            // 总供热 = 冷凝器 + 润滑系统油冷（仅当启用时，仅摩擦热）+ 过冷器 + 降低过热器
-            const Q_heating_total_W = Q_cond_W + Q_oil_cooler_W + Q_subcooler_W + Q_desuperheater_W;
+            // 总供热 = 冷凝器 + 润滑系统油冷（仅当启用时，仅摩擦热）+ 过冷器 + 降低过热器 + 缸头冷却（如果启用）
+            // 注意：缸头冷却是硬件冷却选项，带走的热量也应计入总供热
+            const Q_heating_total_W = Q_cond_W + Q_oil_cooler_W + Q_subcooler_W + Q_desuperheater_W + Q_cylinder_head_W;
 
             // COP 计算使用轴功率
-            const COP_R = Q_evap_W / W_shaft_W;
-            const COP_H = Q_heating_total_W / W_shaft_W;
+            // 修复：防止除以零导致 -Infinity
+            const COP_R = W_shaft_W > 0 ? (Q_evap_W / W_shaft_W) : 0;
+            const COP_H = W_shaft_W > 0 ? (Q_heating_total_W / W_shaft_W) : 0;
 
 
             // --- Chart ---
             // Note: h_3_final and h_liq_out_final are calculated after water circuit section
             // We need to ensure they are available here
+            
+            // =========================================================
+            // RCC Pro: 计算用于显示的排气状态（考虑缸头冷却）
+            // =========================================================
+            // 注意：如果启用缸头冷却，点2显示降低后的排气温度
+            const T_2_display_C = (isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError && Q_cylinder_head_W > 0) 
+                ? T_2a_after_head_cooling_C 
+                : T_2a_final_C;
+            const h_2_display = (isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError && Q_cylinder_head_W > 0)
+                ? h_2a_after_head_cooling
+                : h_2a_final;
+            const desc_2 = (isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError && Q_cylinder_head_W > 0)
+                ? 'Discharge (After Head Cooling)'
+                : 'Discharge';
+            
             const point = (name, h_j, p_pa, pos='top') => ({ name, value: [h_j/1000, p_pa/1e5], label: { position: pos, show: true } });
             
             const pt1 = point('1', h_1, Pe_Pa, 'bottom');
-            const pt2 = point('2', h_2a_final, Pc_Pa, 'top');
+            // 如果启用缸头冷却，使用降低后的排气状态
+            const pt2 = point('2', h_2_display, Pc_Pa, 'top');
             let pt2b = null;
             if (isDesuperheaterEnabled) {
                 pt2b = point('2b', h_2a_after_desuper, Pc_Pa, 'top');
@@ -1248,9 +1398,9 @@ function calculateMode7() {
                     h: h_1 / 1000
                 },
                 point2: {
-                    T: T_2a_final_C,
+                    T: T_2_display_C,
                     P: Pc_Pa / 1e5,
-                    h: h_2a_final / 1000
+                    h: h_2_display / 1000
                 },
                 point3: {
                     T: T_3_C_diagram,
@@ -1265,6 +1415,7 @@ function calculateMode7() {
                 isDesuperheaterEnabled: isDesuperheaterEnabled,
                 isSubcoolerEnabled: isSubcoolerEnabled,
                 isOilCoolerEnabled: isOilCoolerEnabled,
+                isCylinderHeadCoolingEnabled: isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError && Q_cylinder_head_W > 0,
                 water: m_dot_water > 0 ? {
                     inlet: T_water_in,
                     outlet: T_water_out
@@ -1300,7 +1451,8 @@ function calculateMode7() {
                         flow: m_dot_water
                     };
                 }
-                if (isOilCoolerEnabled && waterTemps.oil_cooler) {
+                // 油冷始终存在，记录其状态
+                if (waterTemps.oil_cooler) {
                     nodeDataForDiagram.waterTemps.oil_cooler = {
                         inlet: waterTemps.oil_cooler.inlet,
                         outlet: waterTemps.oil_cooler.outlet,
@@ -1333,9 +1485,10 @@ function calculateMode7() {
             });
 
             // --- HTML Table ---
+            // 注意：T_2_display_C, h_2_display, desc_2 已在前面定义（第1295-1305行）
             const statePoints = [
                 { name: '1', desc: 'Evap Out', temp: Te_C.toFixed(1), press: (Pe_Pa/1e5).toFixed(2), enth: (h_1/1000).toFixed(1), flow: m_dot_suc.toFixed(3) },
-                { name: '2', desc: 'Discharge', temp: T_2a_final_C.toFixed(1), press: (Pc_Pa/1e5).toFixed(2), enth: (h_2a_final/1000).toFixed(1), flow: m_dot_suc.toFixed(3) }
+                { name: '2', desc: desc_2, temp: T_2_display_C.toFixed(1), press: (Pc_Pa/1e5).toFixed(2), enth: (h_2_display/1000).toFixed(1), flow: m_dot_suc.toFixed(3) }
             ];
             
             if (isDesuperheaterEnabled) {
@@ -1344,9 +1497,27 @@ function calculateMode7() {
             
             const T_3_final_C = isSubcoolerEnabled ? (CP_INSTANCE.PropsSI('T','P',Pc_Pa,'H',h_3_final,fluid)-273.15) : (T_3_K-273.15);
             const desc_3 = isSubcoolerEnabled ? 'Subcooler Out' : 'Cond Out';
+            
+            // 修复：计算 POINT 4 温度，添加错误处理防止 Infinity
+            let T_4_C = 0;
+            try {
+                const T_4_K = CP_INSTANCE.PropsSI('T','P',Pe_Pa,'H',h_liq_out_final,fluid);
+                if (isFinite(T_4_K) && T_4_K > 0) {
+                    T_4_C = T_4_K - 273.15;
+                } else {
+                    // 如果计算失败，使用蒸发温度作为近似值
+                    T_4_C = Te_C;
+                    console.warn(`[RCC Pro] Failed to calculate Point 4 temperature, using evaporation temperature ${Te_C}°C as approximation.`);
+                }
+            } catch (e) {
+                // 如果 CoolProp 计算失败，使用蒸发温度作为近似值
+                T_4_C = Te_C;
+                console.warn(`[RCC Pro] Error calculating Point 4 temperature: ${e.message}, using evaporation temperature ${Te_C}°C as approximation.`);
+            }
+            
             statePoints.push(
                 { name: '3', desc: desc_3, temp: T_3_final_C.toFixed(1), press: (Pc_Pa/1e5).toFixed(2), enth: (h_3_final/1000).toFixed(1), flow: m_dot_suc.toFixed(3) },
-                { name: '4', desc: 'Evap In', temp: (CP_INSTANCE.PropsSI('T','P',Pe_Pa,'H',h_liq_out_final,fluid)-273.15).toFixed(1), press: (Pe_Pa/1e5).toFixed(2), enth: (h_liq_out_final/1000).toFixed(1), flow: m_dot_suc.toFixed(3) }
+                { name: '4', desc: 'Evap In', temp: T_4_C.toFixed(1), press: (Pe_Pa/1e5).toFixed(2), enth: (h_liq_out_final/1000).toFixed(1), flow: m_dot_suc.toFixed(3) }
             );
 
             // Render
@@ -1372,7 +1543,8 @@ function calculateMode7() {
                 if (isSubcoolerEnabled && waterTemps.subcooler) {
                     heDetails.push(`<div class="text-xs py-1 border-b border-cyan-100"><span class="font-semibold text-cyan-700">Subcooler:</span> ${waterTemps.subcooler.Q_kW.toFixed(2)} kW | Water: ${waterTemps.subcooler.inlet.toFixed(1)} → ${waterTemps.subcooler.outlet.toFixed(1)} °C</div>`);
                 }
-                if (isOilCoolerEnabled && waterTemps.oil_cooler) {
+                // 油冷始终存在，显示其状态
+                if (waterTemps.oil_cooler) {
                     heDetails.push(`<div class="text-xs py-1 border-b border-cyan-100"><span class="font-semibold text-cyan-700">Oil Cooler:</span> ${waterTemps.oil_cooler.Q_kW.toFixed(2)} kW | Water: ${waterTemps.oil_cooler.inlet.toFixed(1)} → ${waterTemps.oil_cooler.outlet.toFixed(1)} °C</div>`);
                 }
                 if (isCondenserEnabled && waterTemps.condenser) {
@@ -1462,9 +1634,9 @@ function calculateMode7() {
                     const m_dot_oil_est = m_dot_suc * 0.1; // Estimated oil flow (10% of refrigerant flow)
                     const m_dot_oil_est_kg_h = m_dot_oil_est * 3600;
                     
-                    // 判断是否启用，决定显示热水侧信息还是备注说明
-                    const oilCoolerQ_kW = isOilCoolerEnabled ? (Q_oil_cooler_W/1000) : (Q_oil_W/1000);
-                    const hasWaterTemps = isOilCoolerEnabled && waterTemps.oil_cooler;
+                    // 油冷始终启用，使用实际换热量
+                    const oilCoolerQ_kW = Q_oil_cooler_W / 1000;
+                    const hasWaterTemps = waterTemps.oil_cooler !== undefined;
                     
                     let waterSideHtml = '';
                     if (hasWaterTemps) {
@@ -1495,10 +1667,10 @@ function calculateMode7() {
                     }
                     
                     heSelectionParams.push(`
-                        <div class="bg-white/60 p-4 rounded-xl border ${isOilCoolerEnabled ? 'border-cyan-300/50' : 'border-amber-300/50'} mb-3">
-                            <div class="text-sm font-bold ${isOilCoolerEnabled ? 'text-cyan-800' : 'text-amber-800'} mb-3 flex items-center gap-2">
+                        <div class="bg-white/60 p-4 rounded-xl border border-cyan-300/50 mb-3">
+                            <div class="text-sm font-bold text-cyan-800 mb-3 flex items-center gap-2">
                                 <span>🔧 润滑系统油冷 (Lubrication Oil Cooler) 选型参数</span>
-                                ${!isOilCoolerEnabled ? '<span class="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">未启用</span>' : ''}
+                                <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">始终启用</span>
                             </div>
                             <div class="text-xs text-gray-600 mb-2 italic bg-blue-50 p-2 rounded">
                                 <strong>重要说明：</strong>GEA 活塞压缩机的油冷系统仅用于冷却润滑系统（轴承、曲轴、轴封），
@@ -1621,6 +1793,43 @@ function calculateMode7() {
                     `);
                 }
                 
+                // 4. Cylinder Head Cooling (缸头冷却) Selection Parameters
+                if (isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError && Q_cylinder_head_W > 0) {
+                    const T_head_water_in = parseFloat(cylinderHeadWaterInletTempM7?.value) || 30;
+                    const T_head_water_out = parseFloat(cylinderHeadWaterOutletTempM7?.value) || 35;
+                    const c_p_water = 4186; // J/(kg·K)
+                    const m_dot_head_water = Q_cylinder_head_W / (c_p_water * (T_head_water_out - T_head_water_in));
+                    const m_dot_head_water_m3_h = m_dot_head_water * 3600 / 1000;
+                    
+                    heSelectionParams.push(`
+                        <div class="bg-white/70 rounded-xl p-4 border-2 border-amber-300/50 mb-3">
+                            <div class="text-sm font-bold text-amber-900 mb-2 flex items-center gap-2">
+                                <span>🔧 缸头冷却 (Cylinder Head Cooling)</span>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4 text-xs">
+                                <div class="space-y-2">
+                                    <div class="font-semibold text-gray-700 mb-1">冷却水侧:</div>
+                                    <div class="pl-2 space-y-1">
+                                        <div>入口温度: ${T_head_water_in.toFixed(1)} °C</div>
+                                        <div>出口温度: ${T_head_water_out.toFixed(1)} °C</div>
+                                        <div>流量: ${m_dot_head_water.toFixed(3)} kg/s (${m_dot_head_water_m3_h.toFixed(2)} m³/h)</div>
+                                        <div>温升: ${(T_head_water_out - T_head_water_in).toFixed(1)} K</div>
+                                    </div>
+                                </div>
+                                <div class="space-y-2">
+                                    <div class="font-semibold text-gray-700 mb-1">设计参数:</div>
+                                    <div class="pl-2 space-y-1">
+                                        <div>换热量: ${(Q_cylinder_head_W/1000).toFixed(2)} kW</div>
+                                        <div>排气温度降低: ${(T_2a_final_C - T_2a_after_head_cooling_C).toFixed(1)} °C</div>
+                                        <div>传热方式: 水冷缸头 (Water-Cooled Cylinder Heads)</div>
+                                        <div class="text-[10px] text-amber-700 font-semibold mt-1">⚠️ 安全要求: 进水温度 > (蒸发温度 + 10K)</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `);
+                }
+                
                 // Add selection parameters section if any heat exchangers are enabled
                 if (heSelectionParams.length > 0) {
                     waterCircuitHtml += `
@@ -1637,7 +1846,77 @@ function calculateMode7() {
                 }
             }
             
+            // 构建缸头冷却安全检查错误消息 HTML
+            let cylinderHeadCoolingAlertHtml = '';
+            if (cylinderHeadCoolingError) {
+                cylinderHeadCoolingAlertHtml = `
+                    <div class="bg-red-50/90 p-4 rounded-2xl border-2 border-red-500/70 shadow-lg mb-4">
+                        <div class="flex items-start gap-3">
+                            <div class="text-2xl">⚠️</div>
+                            <div class="flex-1">
+                                <div class="text-sm font-bold text-red-800 mb-2">${cylinderHeadCoolingError}</div>
+                                <div class="text-xs text-red-700">
+                                    <strong>安全说明：</strong>如果缸头冷却水温度过低，会导致吸气腔内结露甚至液化，引发严重的<strong>液击 (Liquid Hammer)</strong>风险，可能损坏压缩机。
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // 构建排气温度警告/错误消息 HTML
+            let dischargeTempAlertHtml = '';
+            if (dischargeTempError) {
+                // 危险错误：红色警告框
+                dischargeTempAlertHtml = `
+                    <div class="bg-red-50/90 p-4 rounded-2xl border-2 border-red-500/70 shadow-lg mb-4">
+                        <div class="flex items-start gap-3">
+                            <div class="text-2xl">🚨</div>
+                            <div class="flex-1">
+                                <div class="text-sm font-bold text-red-800 mb-2">${dischargeTempError}</div>
+                                <div class="text-xs text-red-700 mb-2">
+                                    <strong>操作点状态：</strong><span class="font-bold text-red-900">无效 (Invalid Operating Point)</span>
+                                </div>
+                                <div class="text-xs text-red-700 mb-2">
+                                    <strong>建议：</strong>
+                                    <ul class="list-disc list-inside ml-2 mt-1 space-y-1">
+                                        <li>当前压力比对于单级压缩过高。请考虑使用<strong>两级压缩</strong>系统以降低排气温度。</li>
+                                        <li>或者启用<strong>缸头冷却</strong>（可降低约15°C排气温度，带走约4%轴功率的热量）。</li>
+                                        <li>或者使用<strong>喷液冷却</strong>（Liquid Injection）来降低排气温度。</li>
+                                    </ul>
+                                </div>
+                                <div class="text-xs text-red-600 italic">
+                                    注意：活塞压缩机与螺杆压缩机不同，无法通过调整油流量来降低排气温度。高排气温度通常意味着压力比超出单级压缩的合理范围。
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else if (dischargeTempWarning) {
+                // 警告：黄色警告框
+                dischargeTempAlertHtml = `
+                    <div class="bg-amber-50/90 p-4 rounded-2xl border-2 border-amber-400/70 shadow-md mb-4">
+                        <div class="flex items-start gap-3">
+                            <div class="text-xl">⚠️</div>
+                            <div class="flex-1">
+                                <div class="text-sm font-semibold text-amber-800 mb-1">${dischargeTempWarning}</div>
+                                <div class="text-xs text-amber-700">
+                                    <strong>建议：</strong>
+                                    <ul class="list-disc list-inside ml-2 mt-1 space-y-1">
+                                        <li>请监控排气温度，确保不超过最大限制。</li>
+                                        <li>如持续超过警告值，建议考虑启用<strong>缸头冷却</strong>（可降低约15°C排气温度，带走约4%轴功率的热量）。</li>
+                                        <li>或考虑使用<strong>两级压缩</strong>系统以降低排气温度。</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
             let html = `
+                ${cylinderHeadCoolingAlertHtml}
+                ${dischargeTempAlertHtml}
                 <div class="grid grid-cols-2 gap-4 mb-6">
                     ${createKpiCard(i18next.t('components.coolingCapacity'), (Q_evap_W/1000).toFixed(2), 'kW', `COP: ${COP_R.toFixed(2)}`, 'blue')}
                     ${createKpiCard(i18next.t('components.heatingCapacity'), (Q_heating_total_W/1000).toFixed(2), 'kW', `COP: ${COP_H.toFixed(2)}`, 'orange')}
@@ -1645,7 +1924,9 @@ function calculateMode7() {
                 <div class="space-y-1 bg-white/40 p-4 rounded-2xl border border-white/50 shadow-inner">
                     ${createSectionHeader(i18next.t('components.powerAndEfficiency'))}
                     ${createDetailRow(i18next.t('components.shaftPower'), `${(W_shaft_W/1000).toFixed(2)} kW`, true)}
-                    ${createDetailRow('润滑系统摩擦热 (Friction Heat)', `${(Q_oil_W/1000).toFixed(2)} kW`)}
+                    ${createDetailRow('润滑系统摩擦热 (Friction Heat)', `${(Q_oil_W/1000).toFixed(2)} kW (约7%轴功率)`)}
+                    ${Q_cylinder_head_W > 0 ? createDetailRow('缸头冷却负荷 (Cylinder Head Cooling)', `${(Q_cylinder_head_W/1000).toFixed(2)} kW (约4%轴功率)`, true) : ''}
+                    ${isCylinderHeadCoolingEnabled && Q_cylinder_head_W > 0 ? createDetailRow('缸头冷却后排气温度', `${T_2a_after_head_cooling_C.toFixed(1)} °C (降低 ${(T_2a_final_C - T_2a_after_head_cooling_C).toFixed(1)}°C)`) : ''}
                     ${createDetailRow('Calc Logic', efficiency_info_text)}
                     ${createDetailRow('Volumetric Eff (η_v)', displayEtaV, AppState.currentMode === 'polynomial')}
                     ${createDetailRow('Isentropic Eff (η_s)', displayEtaS, AppState.currentMode === 'polynomial')}
@@ -1679,14 +1960,12 @@ function calculateMode7() {
                 if (subcoolerWaterOutM7) subcoolerWaterOutM7.textContent = '--';
             }
             
-            if (oilCoolerQM7 && isOilCoolerEnabled) {
+            // 油冷始终启用，更新显示
+            if (oilCoolerQM7) {
                 oilCoolerQM7.textContent = waterTemps.oil_cooler ? waterTemps.oil_cooler.Q_kW.toFixed(2) : '0.00';
                 if (oilCoolerWaterOutM7 && waterTemps.oil_cooler) {
                     oilCoolerWaterOutM7.textContent = waterTemps.oil_cooler.outlet.toFixed(1);
                 }
-            } else if (oilCoolerQM7) {
-                oilCoolerQM7.textContent = '--';
-                if (oilCoolerWaterOutM7) oilCoolerWaterOutM7.textContent = '--';
             }
             
             if (condenserQM7 && isCondenserEnabled) {
@@ -1707,6 +1986,15 @@ function calculateMode7() {
             } else if (desuperheaterQM7) {
                 desuperheaterQM7.textContent = '--';
                 if (desuperheaterWaterOutM7) desuperheaterWaterOutM7.textContent = '--';
+            }
+            
+            // Update Cylinder Head Cooling display
+            if (cylinderHeadQM7) {
+                if (isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError && Q_cylinder_head_W > 0) {
+                    cylinderHeadQM7.textContent = (Q_cylinder_head_W / 1000).toFixed(2);
+                } else {
+                    cylinderHeadQM7.textContent = '--';
+                }
             }
             
             setButtonFresh7();
@@ -1748,19 +2036,12 @@ export function initMode7(CP) {
     printButtonM7 = document.getElementById('print-button-mode-7');
     fluidSelectM7 = document.getElementById('fluid_m7');
     fluidInfoDivM7 = document.getElementById('fluid-info-m7');
-    tempDischargeActualM7 = document.getElementById('temp_discharge_actual_m7');
     resultsDesktopM7 = document.getElementById('results-desktop-m7');
     resultsMobileM7 = document.getElementById('mobile-results-m7');
     summaryMobileM7 = document.getElementById('mobile-summary-m7');
     autoEffCheckboxM7 = document.getElementById('auto-eff-m7');
     tempEvapM7 = document.getElementById('temp_evap_m7');
     tempCondM7 = document.getElementById('temp_cond_m7');
-    
-    // 初始化排气温度（基于冷凝温度 + 25）
-    if (tempCondM7 && tempDischargeActualM7) {
-        const tc = parseFloat(tempCondM7.value) || 73;
-        tempDischargeActualM7.value = (tc + 25).toFixed(1);
-    }
     
     // 初始化降低过热器目标温度（基于冷凝温度 + 2）
     if (tempCondM7 && desuperheaterTargetTempM7) {
@@ -1781,16 +2062,18 @@ export function initMode7(CP) {
     subcoolerQM7 = document.getElementById('subcooler_q_m7');
     subcoolerWaterOutM7 = document.getElementById('subcooler_water_out_m7');
     
-    oilCoolerEnabledM7 = document.getElementById('oil_cooler_enabled_m7');
-    // 默认启用油冷
-    if (oilCoolerEnabledM7) {
-        oilCoolerEnabledM7.checked = true;
-    }
+    // 修复：油冷不再需要用户选择，始终启用（摩擦热总是存在）
     oilCoolerApproachTempM7 = document.getElementById('oil_cooler_approach_temp_m7');
     oilCoolerQM7 = document.getElementById('oil_cooler_q_m7');
     oilCoolerWaterOutM7 = document.getElementById('oil_cooler_water_out_m7');
     
     condenserEnabledM7 = document.getElementById('condenser_enabled_m7');
+    // 修复：冷凝器是必配项，禁用复选框并强制启用
+    if (condenserEnabledM7) {
+        condenserEnabledM7.checked = true;
+        condenserEnabledM7.disabled = true;
+        condenserEnabledM7.title = '冷凝器是必配项，不可禁用';
+    }
     condenserApproachTempM7 = document.getElementById('condenser_approach_temp_m7');
     condenserQM7 = document.getElementById('condenser_q_m7');
     condenserWaterOutM7 = document.getElementById('condenser_water_out_m7');
@@ -1800,6 +2083,12 @@ export function initMode7(CP) {
     desuperheaterTargetTempM7 = document.getElementById('desuperheater_target_temp_m7');
     desuperheaterQM7 = document.getElementById('desuperheater_q_m7');
     desuperheaterWaterOutM7 = document.getElementById('desuperheater_water_out_m7');
+    
+    // Cylinder Head Cooling (缸头冷却)
+    cylinderHeadCoolingEnabledM7 = document.getElementById('cylinder_head_cooling_enabled_m7');
+    cylinderHeadWaterInletTempM7 = document.getElementById('cylinder_head_water_inlet_temp_m7');
+    cylinderHeadWaterOutletTempM7 = document.getElementById('cylinder_head_water_outlet_temp_m7');
+    cylinderHeadQM7 = document.getElementById('cylinder_head_q_m7');
     
     // VSD / Poly Inputs
     polyRefRpmInputM7 = document.getElementById('poly_ref_rpm_m7');
@@ -1864,54 +2153,33 @@ export function initMode7(CP) {
         });
         
         // 监听余隙容积输入变化
+        // 修复：当余隙容积改变时，如果自动效率计算启用，立即更新效率
         const clearanceInputM7 = document.getElementById('clearance_volume_m7');
         if (clearanceInputM7) {
-            clearanceInputM7.addEventListener('change', updateAndDisplayEfficienciesM7);
+            clearanceInputM7.addEventListener('change', () => {
+                // 如果自动效率计算启用，立即更新效率
+                if (autoEffCheckboxM7 && autoEffCheckboxM7.checked) {
+                    updateAndDisplayEfficienciesM7();
+                }
+                setButtonStale7();
+            });
+            // 也监听 input 事件，实现实时更新
+            clearanceInputM7.addEventListener('input', () => {
+                if (autoEffCheckboxM7 && autoEffCheckboxM7.checked) {
+                    updateAndDisplayEfficienciesM7();
+                }
+            });
         }
         
         // Water circuit inputs - trigger recalculation
         [waterInletTempM7, waterOutletTempM7, 
          subcoolerEnabledM7, subcoolerApproachTempM7,
-         oilCoolerEnabledM7, oilCoolerApproachTempM7,
+         oilCoolerApproachTempM7,
          condenserEnabledM7, condenserApproachTempM7,
-         desuperheaterEnabledM7, desuperheaterApproachTempM7, desuperheaterTargetTempM7].forEach(el => {
+         desuperheaterEnabledM7, desuperheaterApproachTempM7, desuperheaterTargetTempM7,
+         cylinderHeadCoolingEnabledM7, cylinderHeadWaterInletTempM7, cylinderHeadWaterOutletTempM7].forEach(el => {
             if(el) el.addEventListener('change', setButtonStale7);
         });
-        
-        // 冷凝温度改变时，自动更新排气温度（默认 +25°C）
-        if (tempCondM7 && tempDischargeActualM7) {
-            let isAutoAdjusting = true; // 标记是否应该自动调整
-            let lastCondTemp = parseFloat(tempCondM7.value) || 73;
-            
-            // 监听排气温度的手动输入（用户开始编辑时，暂停自动调整）
-            tempDischargeActualM7.addEventListener('focus', () => {
-                isAutoAdjusting = false;
-            });
-            
-            // 监听排气温度的手动修改完成
-            tempDischargeActualM7.addEventListener('change', () => {
-                // 用户手动修改后，检查是否与自动计算值一致
-                const tc = parseFloat(tempCondM7.value);
-                const expected = tc + 25;
-                const current = parseFloat(tempDischargeActualM7.value);
-                // 如果用户输入的值与自动计算值接近（±1°C），则恢复自动调整
-                if (!isNaN(tc) && !isNaN(current) && Math.abs(current - expected) <= 1) {
-                    isAutoAdjusting = true;
-                } else {
-                    isAutoAdjusting = false;
-                }
-            });
-            
-            // 监听冷凝温度改变
-            tempCondM7.addEventListener('change', () => {
-                const tc = parseFloat(tempCondM7.value);
-                if (!isNaN(tc) && isAutoAdjusting) {
-                    tempDischargeActualM7.value = (tc + 25).toFixed(1);
-                    setButtonStale7();
-                }
-                lastCondTemp = tc;
-            });
-        }
         
         // 冷凝温度改变时，自动更新降低过热器目标温度（默认 +2°C）
         if (tempCondM7 && desuperheaterTargetTempM7) {
