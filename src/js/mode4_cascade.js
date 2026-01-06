@@ -6,11 +6,12 @@
 // =====================================================================
 
 import { createKpiCard, createDetailRow, createSectionHeader, createErrorCard, createStateTable } from './components.js';
-import { drawPHDiagram } from './charts.js';
+import { drawPHDiagram, drawTSDiagram } from './charts.js';
 import { HistoryDB, SessionState } from './storage.js';
 import { openMobileSheet } from './ui.js';
 import { updateFluidInfo } from './coolprop_loader.js';
-import { calculateEmpiricalEfficiencies } from './efficiency_models.js';
+import { calculateEmpiricalEfficiencies, calculateReciprocatingVolumetricEfficiency } from './efficiency_models.js';
+import i18next from './i18n.js';
 import { 
     getFilteredBrands,
     getFilteredSeriesByBrand,
@@ -43,16 +44,16 @@ let tempDischargeActualLt, tempDischargeActualHt;
 // 中间换热器
 let approachDtInput;
 
-const BTN_TEXT_CALCULATE = 'Calculate Cascade';
-const BTN_TEXT_RECALCULATE = 'Recalculate (Input Changed)';
+const getBtnTextCalculate = () => i18next.t('common.calculate');
+const getBtnTextRecalculate = () => i18next.t('common.recalculate');
 
 // ---------------------------------------------------------------------
 // Helper
 // ---------------------------------------------------------------------
 
 function setButtonStale4() {
-    if (calcButtonM4 && calcButtonM4.innerText !== BTN_TEXT_RECALCULATE) {
-        calcButtonM4.innerText = BTN_TEXT_RECALCULATE;
+    if (calcButtonM4 && calcButtonM4.innerText !== getBtnTextRecalculate()) {
+        calcButtonM4.innerText = getBtnTextRecalculate();
         calcButtonM4.classList.add('opacity-90', 'ring-2', 'ring-yellow-400', 'ring-offset-2');
         if (printButtonM4) {
             printButtonM4.disabled = true;
@@ -63,7 +64,7 @@ function setButtonStale4() {
 
 function setButtonFresh4() {
     if (calcButtonM4) {
-        calcButtonM4.innerText = BTN_TEXT_CALCULATE;
+        calcButtonM4.innerText = getBtnTextCalculate();
         calcButtonM4.classList.remove('opacity-90', 'ring-2', 'ring-yellow-400', 'ring-offset-2');
     }
 }
@@ -107,7 +108,7 @@ function computeSingleStageCycle({
     // SLHX参数
     isSlhxEnabled = false,
     slhxEff = 0.5,
-    // 排气温度参数（用于油冷负荷计算）
+    // 设计排气温度参数（用于油冷负荷计算）
     T_2a_est_C = null
 }) {
     const T_evap_K = Te_C + 273.15;
@@ -368,6 +369,7 @@ function computeSingleStageCycle({
     // =========================================================
     let W_ideal_W = 0;
     let h_mid_1s = 0, h_mix = 0, h_2s_stage2 = 0; // 用于功率计算和P-h图显示
+    let h_mid_actual = 0; // 实际第一级压缩后的焓值（用于T-s图）
     
     if (!isEcoEnabled) {
         // 4.1 单级压缩（无经济器）
@@ -382,21 +384,27 @@ function computeSingleStageCycle({
         // 从吸气状态（h_suc, s_suc）等熵压缩到中间压力P_eco_Pa
         // 得到点mid（第一级压缩终点）
         h_mid_1s = CP_INSTANCE.PropsSI('H', 'P', P_eco_Pa, 'S', s_suc, fluid);
-        const W_s1 = m_dot_suc * (h_mid_1s - h_suc);
+        const W_s1_ideal = m_dot_suc * (h_mid_1s - h_suc);
+        
+        // 计算实际第一级压缩后的焓值（考虑等熵效率）
+        // h_mid_actual = h_suc + (h_mid_1s - h_suc) / eta_s
+        h_mid_actual = h_suc + (h_mid_1s - h_suc) / eta_s;
+        const W_s1 = W_s1_ideal / eta_s;
         
         // =========================================================
         // 补气混合过程（关键热力学计算）
         // =========================================================
         // 在补气口处，主回路冷媒与补气支路冷媒混合
+        // 注意：混合时使用的是实际压缩后的焓值 h_mid_actual，而不是等熵焓值 h_mid_1s
         // 混合焓值计算（质量加权平均）：
-        // h_mix = (m_main × h_mid + m_inj × h_6) / (m_main + m_inj)
+        // h_mix = (m_main × h_mid_actual + m_inj × h_6) / (m_main + m_inj)
         // 物理意义：能量守恒，混合后的总焓等于混合前各部分焓的加权和
         // =========================================================
-        h_mix = (m_dot_suc * h_mid_1s + m_dot_inj * h_6) / m_dot_total;
+        h_mix = (m_dot_suc * h_mid_actual + m_dot_inj * h_6) / m_dot_total;
         
-        // 验证混合逻辑：h_mix应该小于h_mid_1s（因为h_6 < h_mid_1s）
-        if (h_mix >= h_mid_1s) {
-            console.warn(`混合逻辑异常：h_mix (${h_mix.toFixed(1)} J/kg) >= h_mid_1s (${h_mid_1s.toFixed(1)} J/kg)，补气温度可能异常`);
+        // 验证混合逻辑：h_mix应该小于h_mid_actual（因为h_6 < h_mid_actual）
+        if (h_mix >= h_mid_actual) {
+            console.warn(`混合逻辑异常：h_mix (${h_mix.toFixed(1)} J/kg) >= h_mid_actual (${h_mid_actual.toFixed(1)} J/kg)，补气温度可能异常`);
         }
         
         // 计算混合后的熵值（用于第二阶段等熵压缩）
@@ -407,10 +415,11 @@ function computeSingleStageCycle({
         // =========================================================
         // 从混合状态（h_mix, s_mix）等熵压缩到排气压力Pc_Pa
         h_2s_stage2 = CP_INSTANCE.PropsSI('H', 'P', Pc_Pa, 'S', s_mix, fluid);
-        const W_s2 = m_dot_total * (h_2s_stage2 - h_mix);
+        const W_s2_ideal = m_dot_total * (h_2s_stage2 - h_mix);
+        const W_s2 = W_s2_ideal / eta_s;
         
-        // 总等熵压缩功 = 第一阶段 + 第二阶段
-        W_ideal_W = W_s1 + W_s2;
+        // 总等熵压缩功 = 第一阶段等熵功 + 第二阶段等熵功
+        W_ideal_W = W_s1_ideal + W_s2_ideal;
     }
 
     W_shaft_W = W_ideal_W / eta_s;
@@ -425,7 +434,7 @@ function computeSingleStageCycle({
     let h_2a_final = 0;
     
     if (T_2a_est_C !== null && !isNaN(T_2a_est_C)) {
-        // 使用预估排气温度计算油冷负荷
+        // 使用设计排气温度计算油冷负荷
         const T_2a_est_K = T_2a_est_C + 273.15;
         const h_2a_target = CP_INSTANCE.PropsSI('H', 'T', T_2a_est_K, 'P', Pc_Pa, fluid);
         const energy_out_gas = m_dot_total * h_2a_target;
@@ -442,9 +451,9 @@ function computeSingleStageCycle({
         } else {
             h_2a_final = (h_system_in + W_shaft_W - Q_oil_W) / m_dot_total;
         }
-    } else {
-        // 如果没有提供预估排气温度，使用能量守恒计算
-        const h_2a_target = h_system_in + (W_shaft_W / m_dot_total);
+        } else {
+            // 如果没有提供设计排气温度，使用能量守恒计算
+            const h_2a_target = h_system_in + (W_shaft_W / m_dot_total);
         h_2a_final = h_2a_target;
         const T2a_K = CP_INSTANCE.PropsSI('T', 'P', Pc_Pa, 'H', h_2a_final, fluid);
         T_2a_final_C = T2a_K - 273.15;
@@ -462,6 +471,22 @@ function computeSingleStageCycle({
     const T4_K = CP_INSTANCE.PropsSI('T', 'P', Pe_Pa, 'H', h4, fluid);
     const T4_C = T4_K - 273.15;
 
+    // 计算各状态点的熵值（用于T-s图）
+    // 注意：T-s图应显示实际压缩过程，因此使用实际焓值计算熵值
+    const s1 = s1_base;
+    const s_suc_final = s_suc;
+    const s2a = CP_INSTANCE.PropsSI('S', 'P', Pc_Pa, 'H', h_2a_final, fluid); // 实际排气熵值
+    const s3 = CP_INSTANCE.PropsSI('S', 'T', T3_K, 'P', Pc_Pa, fluid);
+    const s4 = CP_INSTANCE.PropsSI('S', 'P', Pe_Pa, 'H', h4, fluid);
+    const s5 = isEcoEnabled ? CP_INSTANCE.PropsSI('S', 'P', (isEcoEnabled && ecoType === 'flash_tank') ? P_eco_Pa : Pc_Pa, 'H', h_5, fluid) : s3;
+    const s6 = isEcoEnabled ? CP_INSTANCE.PropsSI('S', 'P', P_eco_Pa, 'H', h_6, fluid) : 0;
+    const s7 = isEcoEnabled ? CP_INSTANCE.PropsSI('S', 'P', P_eco_Pa, 'H', h_7, fluid) : s3;
+    // 使用实际压缩后的焓值计算熵值（不是等熵焓值）
+    const s_mid = isEcoEnabled ? CP_INSTANCE.PropsSI('S', 'P', P_eco_Pa, 'H', h_mid_actual, fluid) : 0;
+    const s_mix_final = isEcoEnabled ? CP_INSTANCE.PropsSI('S', 'P', P_eco_Pa, 'H', h_mix, fluid) : 0;
+    // s_2s_stage2 是等熵压缩的熵值，仅用于参考，实际T-s图应使用s2a
+    const s_2s_stage2 = isEcoEnabled ? CP_INSTANCE.PropsSI('S', 'P', Pc_Pa, 'H', h_2s_stage2, fluid) : 0;
+
     return {
         Pe_Pa,
         Pc_Pa,
@@ -476,9 +501,21 @@ function computeSingleStageCycle({
         h5: isEcoEnabled ? h_5 : h3,
         h6: isEcoEnabled ? h_6 : 0,
         h7: isEcoEnabled ? h_7 : h3,
-        h_mid: isEcoEnabled ? h_mid_1s : 0, // 第一级压缩到P_eco的状态
+        h_mid: isEcoEnabled ? h_mid_1s : 0, // 第一级等熵压缩到P_eco的状态（用于P-h图）
+        h_mid_actual: isEcoEnabled ? h_mid_actual : 0, // 第一级实际压缩到P_eco的状态（用于T-s图）
         h_mix: isEcoEnabled ? h_mix : 0, // 补气混合后的状态
-        h_2s_stage2: isEcoEnabled ? h_2s_stage2 : 0, // 第二级等熵压缩终点
+        h_2s_stage2: isEcoEnabled ? h_2s_stage2 : 0, // 第二级等熵压缩终点（用于参考）
+        s1,
+        s_suc: s_suc_final,
+        s2a,
+        s3,
+        s4,
+        s5,
+        s6,
+        s7,
+        s_mid,
+        s_mix: s_mix_final,
+        s_2s_stage2,
         T1_K,
         T2a_C: T_2a_final_C,
         T3_K,
@@ -541,7 +578,7 @@ function calculateMode4() {
             const eta_v_lt = parseFloat(etaVLtInput.value);
             const eta_s_lt = parseFloat(etaSLtInput.value);
             
-            // 读取排气温度输入
+            // 读取设计排气温度输入
             const T_2a_est_Lt_C = tempDischargeActualLt ? parseFloat(tempDischargeActualLt.value) : null;
 
             let flowHt = parseFloat(flowHtInput.value);
@@ -560,7 +597,7 @@ function calculateMode4() {
             const eta_v_ht = parseFloat(etaVHtInput.value);
             const eta_s_ht = parseFloat(etaSHtInput.value);
             
-            // 读取排气温度输入
+            // 读取设计排气温度输入
             const T_2a_est_Ht_C = tempDischargeActualHt ? parseFloat(tempDischargeActualHt.value) : null;
 
             const dt_approach_K = parseFloat(approachDtInput.value);
@@ -625,7 +662,7 @@ function calculateMode4() {
                 throw new Error('请输入完整且有效的数值参数。');
             }
             
-            // 验证排气温度（如果提供了的话）
+            // 验证设计排气温度（如果提供了的话）
             if (T_2a_est_Lt_C !== null && !isNaN(T_2a_est_Lt_C)) {
                 // 低温级排气温度应该高于低温级冷凝温度
                 // 注意：这里使用TcLt_C，但TcLt_C是在迭代中计算的，所以先不验证
@@ -634,7 +671,7 @@ function calculateMode4() {
             if (T_2a_est_Ht_C !== null && !isNaN(T_2a_est_Ht_C)) {
                 // 高温级排气温度应该高于高温级冷凝温度
                 if (T_2a_est_Ht_C <= TcHt_C) {
-                    throw new Error('高温级排气温度必须高于高温级冷凝温度。');
+                    throw new Error('高温级设计排气温度必须高于高温级冷凝温度。');
                 }
             }
             
@@ -656,6 +693,8 @@ function calculateMode4() {
             }
 
             let bestSolution = null;
+            let last_balance = Infinity;
+            let converged = false;
 
             for (let iter = 0; iter < 25; iter++) {
                 const T_int_C = 0.5 * (T_int_low + T_int_high);
@@ -665,6 +704,10 @@ function calculateMode4() {
                 if (TcLt_C >= TcHt_C) {
                     // 低温级冷凝温度不能高于高温级冷凝温度
                     T_int_high = T_int_C;
+                    // 同时检查下限，确保搜索区间有效
+                    if (T_int_low >= T_int_high) {
+                        throw new Error('中间温度搜索区间无效：低温级冷凝温度过高，请检查逼近温差设置。');
+                    }
                     continue;
                 }
 
@@ -713,9 +756,45 @@ function calculateMode4() {
                 const Q_cascade_ht = htStage.Q_evap_W;        // 高温级在中间换热器吸热
                 const balance = (Q_cascade_lt - Q_cascade_ht) / Math.max(1, Math.abs(Q_cascade_lt));
 
+                // ========== 添加调试日志（开始）==========
+                // 只在前3次迭代或接近收敛时打印详细日志
+                if (iter < 3 || Math.abs(balance) < 0.01) {
+                    // 计算质量流量、体积流量、密度
+                    const m_lt_kg_h = ltStage.m_dot * 3600;  // kg/s -> kg/h
+                    const m_ht_kg_h = htStage.m_dot * 3600;  // kg/s -> kg/h
+
+                    // 从输入参数获取体积流量（理论值）
+                    const v_lt_act_m3h = flowLt * eta_v_lt;  // 实际体积流量 m³/h
+                    const v_ht_act_m3h = flowHt * eta_v_ht;  // 实际体积流量 m³/h
+
+                    // 计算密度：rho = m_dot / v_act
+                    // m_dot 是 kg/s, v_act 需要从 m³/h 转换为 m³/s
+                    const rho_lt = ltStage.m_dot / (v_lt_act_m3h / 3600.0);  // kg/m³
+                    const rho_ht = htStage.m_dot / (v_ht_act_m3h / 3600.0);  // kg/m³
+
+                    // 打印日志（注意：Q_cond_W 和 Q_evap_W 是 W，需要转换为 kW 显示）
+                    console.log(`[Ref Iter ${iter + 1}] T_int_C=${T_int_C.toFixed(2)}, T_cond_lt=${TcLt_C.toFixed(2)}, Q_lt=${(Q_cascade_lt/1000).toFixed(2)} kW, Q_ht=${(Q_cascade_ht/1000).toFixed(2)} kW, balance=${(balance * 100).toFixed(4)}%`);
+                    console.log(`  -> LT: m=${m_lt_kg_h.toFixed(1)} kg/h, v=${v_lt_act_m3h.toFixed(2)} m³/h, rho=${rho_lt.toFixed(3)} kg/m³, T_evap=${TeLt_C.toFixed(2)}°C`);
+                    console.log(`  -> HT: m=${m_ht_kg_h.toFixed(1)} kg/h, v=${v_ht_act_m3h.toFixed(2)} m³/h, rho=${rho_ht.toFixed(3)} kg/m³, T_evap=${T_int_C.toFixed(2)}°C`);
+                }
+                // ========== 调试日志结束 ==========
+
                 bestSolution = { T_int_C, TcLt_C, ltStage, htStage, balance };
 
-                if (Math.abs(balance) < 0.001) break; // 能量平衡 0.1% 以内
+                // 检查是否收敛（能量平衡 0.1% 以内）
+                if (Math.abs(balance) < 0.001) {
+                    converged = true;
+                    console.log(`[Mode4] 能量平衡收敛于第 ${iter + 1} 次迭代，平衡误差：${(Math.abs(balance) * 100).toFixed(3)}%`);
+                    break;
+                }
+
+                // 检查迭代是否收敛（balance 值变化很小）
+                if (iter > 0 && Math.abs(balance - last_balance) < 1e-6) {
+                    converged = true;
+                    console.log(`[Mode4] 迭代收敛于第 ${iter + 1} 次，平衡误差：${(Math.abs(balance) * 100).toFixed(3)}%`);
+                    break;
+                }
+                last_balance = balance;
 
                 if (balance > 0) {
                     // 低温级放热 > 高温级吸热，需要提高高温级能力 => 提高 T_int (蒸发温度)
@@ -723,6 +802,16 @@ function calculateMode4() {
                 } else {
                     T_int_high = T_int_C;
                 }
+
+                // 检查搜索区间是否过窄
+                if (T_int_high - T_int_low < 0.1) {
+                    console.warn(`[Mode4] 搜索区间过窄：${(T_int_high - T_int_low).toFixed(2)}°C，可能无法精确收敛`);
+                    break;
+                }
+            }
+
+            if (!converged && bestSolution) {
+                console.warn(`[Mode4] 迭代未完全收敛，使用最佳解。最终平衡误差：${(Math.abs(bestSolution.balance) * 100).toFixed(3)}%`);
             }
 
             if (!bestSolution) {
@@ -731,7 +820,19 @@ function calculateMode4() {
 
             const { T_int_C, TcLt_C, ltStage, htStage, balance } = bestSolution;
 
-            // --- 3. 汇总结果（按轴功率计算）---
+            // --- 3. 能量平衡验证 ---
+            const Q_cascade_lt_final = ltStage.Q_cond_W;
+            const Q_cascade_ht_final = htStage.Q_evap_W;
+            const energy_balance_error = Math.abs(Q_cascade_lt_final - Q_cascade_ht_final) / Math.max(1, Math.abs(Q_cascade_lt_final));
+            
+            if (energy_balance_error > 0.01) { // 1% 容差
+                console.warn(`[Mode4] 能量平衡误差较大：${(energy_balance_error * 100).toFixed(2)}%`);
+                console.warn(`[Mode4] 低温级放热：${(Q_cascade_lt_final / 1000).toFixed(2)} kW，高温级吸热：${(Q_cascade_ht_final / 1000).toFixed(2)} kW`);
+            } else {
+                console.log(`[Mode4] 能量平衡验证通过：误差 ${(energy_balance_error * 100).toFixed(3)}%`);
+            }
+
+            // --- 4. 汇总结果（按轴功率计算）---
             const Q_evap_total_W = ltStage.Q_evap_W; // 系统总制冷量由低温级决定
             const W_shaft_total_W = ltStage.W_shaft_W + htStage.W_shaft_W;
             // 输入功率等于轴功率（无电机效率）
@@ -947,7 +1048,7 @@ function calculateMode4() {
                 flow: htStage.m_dot.toFixed(4)
             });
 
-            // --- 5. 绘制 P-h 图（分别绘制两级，支持ECO和SLHX，完全按照模式1逻辑） ---
+            // --- 6. 绘制 P-h 图（分别绘制两级，支持ECO和SLHX，完全按照模式1逻辑） ---
             const point = (name, h_j, p_pa, pos = 'top') => ({ 
                 name, 
                 value: [h_j / 1000, p_pa / 1e5], 
@@ -1107,45 +1208,303 @@ function calculateMode4() {
                 return { mainPoints, ecoLiquidPoints, ecoVaporPoints };
             }
 
-            // 低温级P-h图
+            // 辅助函数：构建T-s图点
+            function buildTSPoints(stage, fluid) {
+                const tsPoint = (name, s_j, T_K, pos = 'top') => ({ 
+                    name, 
+                    value: [s_j / 1000, T_K - 273.15], 
+                    label: { position: pos, show: true } 
+                });
+
+                const pt1 = tsPoint('1', stage.s1, stage.T1_K, 'bottom');
+                const pt1_p = tsPoint("1'", stage.s_suc, CP_INSTANCE.PropsSI('T', 'H', stage.h_suc, 'P', stage.Pe_Pa, fluid), 'bottom');
+                const pt2 = tsPoint('2', stage.s2a, stage.T2a_C + 273.15, 'top');
+                const pt3 = tsPoint('3', stage.s3, stage.T3_K, 'top');
+                const pt4 = tsPoint('4', stage.s4, stage.T4_C + 273.15, 'bottom');
+
+                let mainPoints = [], ecoLiquidPoints = [], ecoVaporPoints = [];
+
+                if (!stage.isEcoEnabled) {
+                    if (stage.isSlhxEnabled) {
+                        const T_5p = CP_INSTANCE.PropsSI('T', 'H', stage.h4, 'P', stage.Pc_Pa, fluid);
+                        const pt5_p = tsPoint("5'", stage.s4, T_5p, 'top');
+                        mainPoints = [pt1, pt1_p, pt2, pt3, pt5_p, pt4, pt1];
+                    } else {
+                        mainPoints = [pt1, pt2, pt3, pt4, pt1];
+                    }
+                } else {
+                    if (stage.ecoType === 'flash_tank') {
+                        const pt7 = tsPoint('7', stage.s7, stage.T_eco_sat_K, 'right');
+                        // 使用实际压缩后的焓值计算温度（不是等熵焓值）
+                        const h_mid_for_ts = stage.h_mid_actual || stage.h_mid; // 优先使用实际焓值
+                        const T_mid = CP_INSTANCE.PropsSI('T', 'H', h_mid_for_ts, 'P', stage.P_eco_Pa, fluid);
+                        const T_mix = CP_INSTANCE.PropsSI('T', 'H', stage.h_mix, 'P', stage.P_eco_Pa, fluid);
+                        const T_6 = CP_INSTANCE.PropsSI('T', 'H', stage.h6, 'P', stage.P_eco_Pa, fluid);
+                        const pt_mid = tsPoint('mid', stage.s_mid, T_mid, 'right');
+                        const pt6 = tsPoint('6', stage.s6, T_6, 'left');
+                        const pt_mix = tsPoint('mix', stage.s_mix, T_mix, 'left');
+                        const pt5 = tsPoint('5', stage.s5, stage.T_eco_sat_K, 'top');
+                        
+                        const pt1_start = stage.isSlhxEnabled ? pt1_p : pt1;
+                        mainPoints = [pt4, pt1, pt1_start, pt_mid, pt_mix, pt2, pt3];
+                        
+                        ecoLiquidPoints = [pt3, pt7, pt5];
+                        if (stage.isSlhxEnabled) {
+                            const T_5p = CP_INSTANCE.PropsSI('T', 'H', stage.h4, 'P', stage.P_eco_Pa, fluid);
+                            const pt5_p = tsPoint("5'", stage.s4, T_5p, 'top');
+                            ecoLiquidPoints.push(pt5_p, pt4);
+                        } else {
+                            ecoLiquidPoints.push(pt4);
+                        }
+                        
+                        ecoVaporPoints = [pt7, pt6];
+                    } else {
+                        // Subcooler模式
+                        const T_7 = CP_INSTANCE.PropsSI('T', 'P', stage.P_eco_Pa, 'Q', 0, fluid);
+                        const T_6 = CP_INSTANCE.PropsSI('T', 'H', stage.h6, 'P', stage.P_eco_Pa, fluid);
+                        const T_5 = CP_INSTANCE.PropsSI('T', 'H', stage.h5, 'P', stage.Pc_Pa, fluid);
+                        // 使用实际压缩后的焓值计算温度（不是等熵焓值）
+                        const h_mid_for_ts = stage.h_mid_actual || stage.h_mid; // 优先使用实际焓值
+                        const T_mid = CP_INSTANCE.PropsSI('T', 'H', h_mid_for_ts, 'P', stage.P_eco_Pa, fluid);
+                        const T_mix = CP_INSTANCE.PropsSI('T', 'H', stage.h_mix, 'P', stage.P_eco_Pa, fluid);
+                        
+                        const pt7 = tsPoint('7', stage.s7, T_7, 'right');
+                        const pt6 = tsPoint('6', stage.s6, T_6, 'left');
+                        const pt5 = tsPoint('5', stage.s5, T_5, 'top');
+                        const pt_mid = tsPoint('mid', stage.s_mid, T_mid, 'right');
+                        const pt_mix = tsPoint('mix', stage.s_mix, T_mix, 'left');
+                        
+                        const pt1_start = stage.isSlhxEnabled ? pt1_p : pt1;
+                        mainPoints = [pt4, pt1];
+                        if (stage.isSlhxEnabled) {
+                            mainPoints.push(pt1_start);
+                        }
+                        mainPoints.push(pt_mid, pt_mix, pt2, pt3);
+                        
+                        ecoLiquidPoints = [pt3, pt5];
+                        if (stage.isSlhxEnabled) {
+                            const T_5p = CP_INSTANCE.PropsSI('T', 'H', stage.h4, 'P', stage.Pc_Pa, fluid);
+                            const pt5_p = tsPoint("5'", stage.s4, T_5p, 'top');
+                            ecoLiquidPoints.push(pt5_p, pt4);
+                        } else {
+                            ecoLiquidPoints.push(pt4);
+                        }
+                        
+                        const pt3_clone = tsPoint('', stage.s3, stage.T3_K);
+                        ecoVaporPoints = [pt3_clone, pt7, pt6];
+                    }
+                }
+
+                return { mainPoints, ecoLiquidPoints, ecoVaporPoints };
+            }
+
+            // 低温级P-h图和T-s图
             const ltPH = buildPHPoints(ltStage);
+            const ltTS = buildTSPoints(ltStage, fluidLt);
             const ltMainPoints = ltPH.mainPoints;
             const ltEcoLiquidPoints = ltPH.ecoLiquidPoints;
             const ltEcoVaporPoints = ltPH.ecoVaporPoints;
+            const ltMainPointsTS = ltTS.mainPoints;
+            const ltEcoLiquidPointsTS = ltTS.ecoLiquidPoints;
+            const ltEcoVaporPointsTS = ltTS.ecoVaporPoints;
 
-            // 高温级P-h图
+            // 高温级P-h图和T-s图
             const htPH = buildPHPoints(htStage);
+            const htTS = buildTSPoints(htStage, fluidHt);
             const htMainPoints = htPH.mainPoints;
             const htEcoLiquidPoints = htPH.ecoLiquidPoints;
             const htEcoVaporPoints = htPH.ecoVaporPoints;
+            const htMainPointsTS = htTS.mainPoints;
+            const htEcoLiquidPointsTS = htTS.ecoLiquidPoints;
+            const htEcoVaporPointsTS = htTS.ecoVaporPoints;
 
-            ['chart-desktop-m4-lt', 'chart-mobile-m4-lt'].forEach(id => {
-                drawPHDiagram(id, {
-                    title: `Low Stage (${fluidLt})`,
-                    mainPoints: ltMainPoints,
-                    ecoLiquidPoints: ltEcoLiquidPoints,
-                    ecoVaporPoints: ltEcoVaporPoints,
-                    xLabel: 'h (kJ/kg)',
-                    yLabel: 'P (bar)'
+            // 生成饱和线数据
+            function generateSaturationLinesPH(fluid, Pe_Pa, Pc_Pa, numPoints = 100) {
+                if (!CP_INSTANCE) return { liquidPH: [], vaporPH: [] };
+                
+                const liquidPoints = [];
+                const vaporPoints = [];
+                
+                const P_min = Math.min(Pe_Pa, Pc_Pa) * 0.8;
+                const P_max = Math.max(Pe_Pa, Pc_Pa) * 1.2;
+                
+                for (let i = 0; i <= numPoints; i++) {
+                    const logP_min = Math.log10(P_min);
+                    const logP_max = Math.log10(P_max);
+                    const logP = logP_min + (logP_max - logP_min) * (i / numPoints);
+                    const P_Pa = Math.pow(10, logP);
+                    
+                    try {
+                        const h_liq = CP_INSTANCE.PropsSI('H', 'P', P_Pa, 'Q', 0, fluid);
+                        const h_vap = CP_INSTANCE.PropsSI('H', 'P', P_Pa, 'Q', 1, fluid);
+                        liquidPoints.push([h_liq / 1000, P_Pa / 1e5]);
+                        vaporPoints.push([h_vap / 1000, P_Pa / 1e5]);
+                    } catch (e) {
+                        continue;
+                    }
+                }
+                
+                return { liquidPH: liquidPoints, vaporPH: vaporPoints };
+            }
+
+            function generateSaturationLinesTS(fluid, Te_C, Tc_C, numPoints = 100) {
+                if (!CP_INSTANCE) return { liquid: [], vapor: [] };
+                
+                const liquidPoints = [];
+                const vaporPoints = [];
+                
+                const T_min = Math.min(Te_C, Tc_C) - 20;
+                const T_max = Math.max(Te_C, Tc_C) + 20;
+                
+                for (let i = 0; i <= numPoints; i++) {
+                    const T_C = T_min + (T_max - T_min) * (i / numPoints);
+                    const T_K = T_C + 273.15;
+                    
+                    try {
+                        const s_liq = CP_INSTANCE.PropsSI('S', 'T', T_K, 'Q', 0, fluid);
+                        const s_vap = CP_INSTANCE.PropsSI('S', 'T', T_K, 'Q', 1, fluid);
+                        liquidPoints.push([s_liq / 1000, T_C]);
+                        vaporPoints.push([s_vap / 1000, T_C]);
+                    } catch (e) {
+                        continue;
+                    }
+                }
+                
+                return { liquid: liquidPoints, vapor: vaporPoints };
+            }
+
+            // 生成低温级和高温级的饱和线
+            const ltSatPH = generateSaturationLinesPH(fluidLt, ltStage.Pe_Pa, ltStage.Pc_Pa);
+            const ltSatTS = generateSaturationLinesTS(fluidLt, TeLt_C, TcLt_C);
+            const htSatPH = generateSaturationLinesPH(fluidHt, htStage.Pe_Pa, htStage.Pc_Pa);
+            const htSatTS = generateSaturationLinesTS(fluidHt, T_int_C, TcHt_C);
+
+            // 默认绘制P-h图
+            let currentChartType = 'ph';
+            function drawCharts(type) {
+                currentChartType = type;
+                if (type === 'ph') {
+                    ['chart-desktop-m4-lt', 'chart-mobile-m4-lt'].forEach(id => {
+                        drawPHDiagram(id, {
+                            title: `Low Stage (${fluidLt})`,
+                            mainPoints: ltMainPoints,
+                            ecoLiquidPoints: ltEcoLiquidPoints,
+                            ecoVaporPoints: ltEcoVaporPoints,
+                            saturationLiquidPoints: ltSatPH.liquidPH,
+                            saturationVaporPoints: ltSatPH.vaporPH,
+                            xLabel: 'h (kJ/kg)',
+                            yLabel: 'P (bar)'
+                        });
+                    });
+
+                    ['chart-desktop-m4-ht', 'chart-mobile-m4-ht'].forEach(id => {
+                        drawPHDiagram(id, {
+                            title: `High Stage (${fluidHt})`,
+                            mainPoints: htMainPoints,
+                            ecoLiquidPoints: htEcoLiquidPoints,
+                            ecoVaporPoints: htEcoVaporPoints,
+                            saturationLiquidPoints: htSatPH.liquidPH,
+                            saturationVaporPoints: htSatPH.vaporPH,
+                            xLabel: 'h (kJ/kg)',
+                            yLabel: 'P (bar)'
+                        });
+                    });
+                } else {
+                    ['chart-desktop-m4-lt', 'chart-mobile-m4-lt'].forEach(id => {
+                        drawTSDiagram(id, {
+                            title: `Low Stage (${fluidLt})`,
+                            mainPoints: ltMainPointsTS,
+                            ecoLiquidPoints: ltEcoLiquidPointsTS,
+                            ecoVaporPoints: ltEcoVaporPointsTS,
+                            saturationLiquidPoints: ltSatTS.liquid,
+                            saturationVaporPoints: ltSatTS.vapor,
+                            xLabel: 's (kJ/kg·K)',
+                            yLabel: 'T (°C)'
+                        });
+                    });
+
+                    ['chart-desktop-m4-ht', 'chart-mobile-m4-ht'].forEach(id => {
+                        drawTSDiagram(id, {
+                            title: `High Stage (${fluidHt})`,
+                            mainPoints: htMainPointsTS,
+                            ecoLiquidPoints: htEcoLiquidPointsTS,
+                            ecoVaporPoints: htEcoVaporPointsTS,
+                            saturationLiquidPoints: htSatTS.liquid,
+                            saturationVaporPoints: htSatTS.vapor,
+                            xLabel: 's (kJ/kg·K)',
+                            yLabel: 'T (°C)'
+                        });
+                    });
+                }
+            }
+
+            // 辅助函数：更新按钮状态
+            function updateButtonState(type) {
+                const chartToggleBtns = document.querySelectorAll('.chart-toggle-m4');
+                chartToggleBtns.forEach(b => {
+                    if (b.dataset.type === type) {
+                        b.classList.add('bg-teal-500', 'text-white');
+                        b.classList.remove('bg-white', 'text-gray-600');
+                    } else {
+                        b.classList.remove('bg-teal-500', 'text-white');
+                        b.classList.add('bg-white', 'text-gray-600');
+                    }
                 });
-            });
+            }
 
-            ['chart-desktop-m4-ht', 'chart-mobile-m4-ht'].forEach(id => {
-                drawPHDiagram(id, {
-                    title: `High Stage (${fluidHt})`,
-                    mainPoints: htMainPoints,
-                    ecoLiquidPoints: htEcoLiquidPoints,
-                    ecoVaporPoints: htEcoVaporPoints,
-                    xLabel: 'h (kJ/kg)',
-                    yLabel: 'P (bar)'
+            // 初始绘制P-h图（默认）
+            drawCharts('ph');
+            
+            // 检查当前按钮状态并同步图表显示
+            setTimeout(() => {
+                const chartToggleBtns = document.querySelectorAll('.chart-toggle-m4');
+                let initialType = 'ph'; // 默认P-h图
+                
+                // 检查是否有按钮已经选中T-s图（保留用户之前的选择）
+                chartToggleBtns.forEach(btn => {
+                    if (btn.classList.contains('bg-teal-500') && btn.dataset.type === 'ts') {
+                        initialType = 'ts';
+                    }
                 });
-            });
+                
+                // 如果按钮状态是T-s图，则绘制T-s图并同步按钮状态
+                if (initialType === 'ts') {
+                    drawCharts('ts');
+                    updateButtonState('ts');
+                } else {
+                    // 确保按钮状态与图表显示一致（P-h图）
+                    updateButtonState('ph');
+                }
 
-            // --- 6. 渲染结果面板 ---
+                // 添加图表切换按钮事件监听
+                // 直接给每个按钮绑定事件，避免重复绑定
+                chartToggleBtns.forEach(btn => {
+                    // 移除旧的事件监听器（如果存在）
+                    if (btn._chartToggleHandler) {
+                        btn.removeEventListener('click', btn._chartToggleHandler);
+                    }
+                    // 创建新的事件处理函数
+                    const handler = (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const type = btn.dataset.type;
+                        if (type) {
+                            drawCharts(type);
+                            updateButtonState(type);
+                        }
+                    };
+                    // 保存函数引用以便后续移除
+                    btn._chartToggleHandler = handler;
+                    // 添加新的事件监听器
+                    btn.addEventListener('click', handler);
+                });
+            }, 100);
+
+            // --- 7. 渲染结果面板 ---
             const html = `
                 <div class="grid grid-cols-2 gap-4 mb-6">
                     ${createKpiCard('系统制冷量', (Q_evap_total_W / 1000).toFixed(2), 'kW', 'From Low Stage', 'blue')}
-                    ${createKpiCard('总轴功率', (W_shaft_total_W / 1000).toFixed(2), 'kW', 'Shaft Power', 'orange')}
+                    ${createKpiCard(i18next.t('components.totalShaftPower'), (W_shaft_total_W / 1000).toFixed(2), 'kW', i18next.t('components.shaftPower'), 'orange')}
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -1153,18 +1512,18 @@ function calculateMode4() {
                         ${createSectionHeader('Low Stage Summary', '❄️')}
                         ${createDetailRow('Refrigerant', fluidLt)}
                         ${createDetailRow('Te / Tc', `${TeLt_C.toFixed(1)} / ${TcLt_C.toFixed(1)} °C`)}
+                        ${createDetailRow('轴功 (LT)', `${(ltStage.W_shaft_W / 1000).toFixed(2)} kW`)}
                         ${createDetailRow('Q_evap', `${(ltStage.Q_evap_W / 1000).toFixed(2)} kW`)}
                         ${createDetailRow('Q_cond (Cascade)', `${(ltStage.Q_cond_W / 1000).toFixed(2)} kW`)}
-                        ${createDetailRow('W_shaft', `${(ltStage.W_shaft_W / 1000).toFixed(2)} kW`)}
                         ${createDetailRow('Q_oil (Oil Cooling)', `${(ltStage.Q_oil_W / 1000).toFixed(2)} kW`)}
                     </div>
                     <div class="bg-white/60 p-4 rounded-2xl border border-white/50">
                         ${createSectionHeader('High Stage Summary', '🔥')}
                         ${createDetailRow('Refrigerant', fluidHt)}
                         ${createDetailRow('Te / Tc', `${T_int_C.toFixed(1)} / ${TcHt_C.toFixed(1)} °C`)}
+                        ${createDetailRow('轴功 (HT)', `${(htStage.W_shaft_W / 1000).toFixed(2)} kW`)}
                         ${createDetailRow('Q_evap (Cascade)', `${(htStage.Q_evap_W / 1000).toFixed(2)} kW`)}
                         ${createDetailRow('Q_cond', `${(htStage.Q_cond_W / 1000).toFixed(2)} kW`)}
-                        ${createDetailRow('W_shaft', `${(htStage.W_shaft_W / 1000).toFixed(2)} kW`)}
                         ${createDetailRow('Q_oil (Oil Cooling)', `${(htStage.Q_oil_W / 1000).toFixed(2)} kW`)}
                     </div>
                 </div>
@@ -1187,6 +1546,7 @@ function calculateMode4() {
             setButtonFresh4();
             if (printButtonM4) printButtonM4.disabled = false;
 
+            // 初始化 lastCalculationData（在设置 chartData 之前）
             lastCalculationData = {
                 fluidLt,
                 fluidHt,
@@ -1199,7 +1559,11 @@ function calculateMode4() {
                 Q_evap_total_W,
                 W_shaft_total_W,
                 W_input_total_W,
-                COP_system
+                COP_system,
+                chartData: {
+                    lt: { ph: ltPH, ts: ltTS, fluid: fluidLt },
+                    ht: { ph: htPH, ts: htTS, fluid: fluidHt }
+                }
             };
 
             const inputState = SessionState.collectInputs('calc-form-mode-4');
@@ -1246,7 +1610,7 @@ function printReportMode4() {
 function initCompressorModelSelectorsM4Lt() {
     // Mode 4 LT (复叠压缩模式): 前川只保留N系列，其余品牌保留全部
     const brands = getFilteredBrands('m4');
-    compressorBrandLt.innerHTML = '<option value="">-- 选择品牌 --</option>';
+    compressorBrandLt.innerHTML = `<option value="">${i18next.t('common.selectBrand')}</option>`;
     brands.forEach(brand => {
         const option = document.createElement('option');
         option.value = brand;
@@ -1256,14 +1620,14 @@ function initCompressorModelSelectorsM4Lt() {
 
     compressorBrandLt.addEventListener('change', () => {
         const brand = compressorBrandLt.value;
-        compressorSeriesLt.innerHTML = '<option value="">-- 选择系列 --</option>';
-        compressorModelLt.innerHTML = '<option value="">-- 选择型号 --</option>';
+        compressorSeriesLt.innerHTML = `<option value="">${i18next.t('common.selectSeries')}</option>`;
+        compressorModelLt.innerHTML = `<option value="">${i18next.t('common.selectModel')}</option>`;
         compressorSeriesLt.disabled = !brand;
         compressorModelLt.disabled = true;
         modelDisplacementInfoLt.classList.add('hidden');
 
         if (brand) {
-            const series = getFilteredSeriesByBrand('m4', brand);
+            const series = getFilteredSeriesByBrand('m4', brand, 'lt');
             series.forEach(s => {
                 const option = document.createElement('option');
                 option.value = s;
@@ -1277,7 +1641,7 @@ function initCompressorModelSelectorsM4Lt() {
     compressorSeriesLt.addEventListener('change', () => {
         const brand = compressorBrandLt.value;
         const series = compressorSeriesLt.value;
-        compressorModelLt.innerHTML = '<option value="">-- 选择型号 --</option>';
+        compressorModelLt.innerHTML = `<option value="">${i18next.t('common.selectModel')}</option>`;
         compressorModelLt.disabled = !series;
         modelDisplacementInfoLt.classList.add('hidden');
 
@@ -1320,7 +1684,7 @@ function initCompressorModelSelectorsM4Lt() {
 function initCompressorModelSelectorsM4Ht() {
     // Mode 4 HT (复叠压缩模式): 前川只保留N系列，其余品牌保留全部
     const brands = getFilteredBrands('m4');
-    compressorBrandHt.innerHTML = '<option value="">-- 选择品牌 --</option>';
+    compressorBrandHt.innerHTML = `<option value="">${i18next.t('common.selectBrand')}</option>`;
     brands.forEach(brand => {
         const option = document.createElement('option');
         option.value = brand;
@@ -1330,14 +1694,14 @@ function initCompressorModelSelectorsM4Ht() {
 
     compressorBrandHt.addEventListener('change', () => {
         const brand = compressorBrandHt.value;
-        compressorSeriesHt.innerHTML = '<option value="">-- 选择系列 --</option>';
-        compressorModelHt.innerHTML = '<option value="">-- 选择型号 --</option>';
+        compressorSeriesHt.innerHTML = `<option value="">${i18next.t('common.selectSeries')}</option>`;
+        compressorModelHt.innerHTML = `<option value="">${i18next.t('common.selectModel')}</option>`;
         compressorSeriesHt.disabled = !brand;
         compressorModelHt.disabled = true;
         modelDisplacementInfoHt.classList.add('hidden');
 
         if (brand) {
-            const series = getFilteredSeriesByBrand('m4', brand);
+            const series = getFilteredSeriesByBrand('m4', brand, 'ht');
             series.forEach(s => {
                 const option = document.createElement('option');
                 option.value = s;
@@ -1351,7 +1715,7 @@ function initCompressorModelSelectorsM4Ht() {
     compressorSeriesHt.addEventListener('change', () => {
         const brand = compressorBrandHt.value;
         const series = compressorSeriesHt.value;
-        compressorModelHt.innerHTML = '<option value="">-- 选择型号 --</option>';
+        compressorModelHt.innerHTML = `<option value="">${i18next.t('common.selectModel')}</option>`;
         compressorModelHt.disabled = !series;
         modelDisplacementInfoHt.classList.add('hidden');
 

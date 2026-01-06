@@ -8,16 +8,18 @@
 
 import { openMobileSheet } from './ui.js';
 import { updateFluidInfo } from './coolprop_loader.js';
-import { calculateEmpiricalEfficiencies } from './efficiency_models.js';
+import { calculateEmpiricalEfficiencies, calculateReciprocatingVolumetricEfficiency } from './efficiency_models.js';
 import { 
     createKpiCard, 
     createDetailRow, 
     createSectionHeader, 
     createErrorCard,
     createStateTable,
-    createImpactGrid 
+    createImpactGrid,
+    createHeatExchangerSelectionTable,
+    createFlashTankSelectionTable
 } from './components.js';
-import { drawPHDiagram } from './charts.js';
+import { drawPHDiagram, drawTSDiagram, getChartInstance } from './charts.js';
 import { HistoryDB, SessionState } from './storage.js';
 import { AppState } from './state.js'; 
 import { calculatePoly10, calculatePolyVSD } from './logic/polynomial_models.js';
@@ -25,8 +27,10 @@ import {
     getFilteredBrands,
     getFilteredSeriesByBrand,
     getModelsBySeries, 
-    getDisplacementByModel 
+    getDisplacementByModel,
+    getModelDetail
 } from './compressor_models.js';
+import i18next from './i18n.js';
 
 let CP_INSTANCE = null;
 let lastCalculationData = null; 
@@ -42,17 +46,17 @@ let slhxCheckbox, slhxEffInput;
 let compressorBrandM2, compressorSeriesM2, compressorModelM2, modelDisplacementInfoM2, modelDisplacementValueM2;
 let flowM3hM2;
 
-// Button States
-const BTN_TEXT_CALCULATE = "Calculate Performance";
-const BTN_TEXT_RECALCULATE = "Recalculate (Input Changed)";
+// Button States - 使用i18n
+const getBtnTextCalculate = () => i18next.t('mode2.calculatePerformance');
+const getBtnTextRecalculate = () => i18next.t('common.recalculate');
 
 // ---------------------------------------------------------------------
 // Helper Functions
 // ---------------------------------------------------------------------
 
 function setButtonStale2() {
-    if (calcButtonM2 && calcButtonM2.innerText !== BTN_TEXT_RECALCULATE) {
-        calcButtonM2.innerText = BTN_TEXT_RECALCULATE;
+    if (calcButtonM2 && calcButtonM2.innerText !== getBtnTextRecalculate()) {
+        calcButtonM2.innerText = getBtnTextRecalculate();
         calcButtonM2.classList.add('opacity-90', 'ring-2', 'ring-yellow-400', 'ring-offset-2');
         if(printButtonM2) {
             printButtonM2.disabled = true;
@@ -63,7 +67,7 @@ function setButtonStale2() {
 
 function setButtonFresh2() {
     if (calcButtonM2) {
-        calcButtonM2.innerText = BTN_TEXT_CALCULATE;
+        calcButtonM2.innerText = getBtnTextCalculate();
         calcButtonM2.classList.remove('opacity-90', 'ring-2', 'ring-yellow-400', 'ring-offset-2');
     }
 }
@@ -102,11 +106,43 @@ function updateAndDisplayEfficienciesM2() {
         
         if (!Pe_Pa || !Pc_Pa) return;
 
-        const pressureRatio = Pc_Pa / Pe_Pa;
-        const efficiencies = calculateEmpiricalEfficiencies(pressureRatio);
+        // RCC Pro: 使用活塞压缩机容积效率计算
+        const T_suc_K = Te_C + 273.15 + (parseFloat(document.getElementById('superheat_m2').value) || 5);
         
-        if (etaVM2) etaVM2.value = efficiencies.eta_v;
-        if (etaSM2) etaSM2.value = efficiencies.eta_s;
+        // 尝试从选中的压缩机型号获取余隙容积
+        let clearance_factor = 0.04; // 默认值
+        const brand = compressorBrandM2?.value;
+        const series = compressorSeriesM2?.value;
+        const model = compressorModelM2?.value;
+        if (brand && series && model) {
+            const modelDetail = getModelDetail(brand, series, model);
+            if (modelDetail && modelDetail.clearance_factor) {
+                clearance_factor = modelDetail.clearance_factor;
+            }
+        }
+        
+        // 计算活塞压缩机容积效率
+        const eta_v = calculateReciprocatingVolumetricEfficiency(
+            Pc_Pa,
+            Pe_Pa,
+            clearance_factor,
+            null, // 使用 CoolProp 获取等熵指数
+            CP_INSTANCE,
+            fluid,
+            T_suc_K
+        );
+        
+        // 等熵效率：使用简化的活塞压缩机经验公式
+        const pressureRatio = Pc_Pa / Pe_Pa;
+        // 活塞压缩机等熵效率通常为 0.70-0.80，随压力比变化
+        let eta_s = 0.80 - 0.01 * (pressureRatio - 3.0);
+        if (pressureRatio < 3.0) {
+            eta_s = 0.80 - 0.005 * (3.0 - pressureRatio);
+        }
+        eta_s = Math.max(0.65, Math.min(0.85, eta_s));
+        
+        if (etaVM2) etaVM2.value = eta_v.toFixed(4);
+        if (etaSM2) etaSM2.value = eta_s.toFixed(3);
 
     } catch (error) {
         console.warn("Auto-Eff Error (Ignored):", error.message);
@@ -120,7 +156,7 @@ function updateAndDisplayEfficienciesM2() {
 function initCompressorModelSelectorsM2() {
     // Populate brand dropdown (Mode 2: 前川只保留N系列，其余品牌保留全部)
     const brands = getFilteredBrands('m2');
-    compressorBrandM2.innerHTML = '<option value="">-- 选择品牌 --</option>';
+    compressorBrandM2.innerHTML = `<option value="">${i18next.t('common.selectBrand')}</option>`;
     brands.forEach(brand => {
         const option = document.createElement('option');
         option.value = brand;
@@ -131,8 +167,8 @@ function initCompressorModelSelectorsM2() {
     // Brand change handler
     compressorBrandM2.addEventListener('change', () => {
         const brand = compressorBrandM2.value;
-        compressorSeriesM2.innerHTML = '<option value="">-- 选择系列 --</option>';
-        compressorModelM2.innerHTML = '<option value="">-- 选择型号 --</option>';
+        compressorSeriesM2.innerHTML = `<option value="">${i18next.t('common.selectSeries')}</option>`;
+        compressorModelM2.innerHTML = `<option value="">${i18next.t('common.selectModel')}</option>`;
         compressorSeriesM2.disabled = !brand;
         compressorModelM2.disabled = true;
         modelDisplacementInfoM2.classList.add('hidden');
@@ -153,7 +189,7 @@ function initCompressorModelSelectorsM2() {
     compressorSeriesM2.addEventListener('change', () => {
         const brand = compressorBrandM2.value;
         const series = compressorSeriesM2.value;
-        compressorModelM2.innerHTML = '<option value="">-- 选择型号 --</option>';
+        compressorModelM2.innerHTML = `<option value="">${i18next.t('common.selectModel')}</option>`;
         compressorModelM2.disabled = !series;
         modelDisplacementInfoM2.classList.add('hidden');
 
@@ -220,6 +256,170 @@ function initCompressorModelSelectorsM2() {
             }
         });
     });
+}
+
+// ---------------------------------------------------------------------
+// Saturation Lines Generation
+// ---------------------------------------------------------------------
+
+/**
+ * 生成 P-h 图的饱和线数据点
+ * @param {string} fluid - 工质名称
+ * @param {number} Pe_Pa - 蒸发压力 (Pa)
+ * @param {number} Pc_Pa - 冷凝压力 (Pa)
+ * @param {number} numPoints - 数据点数量
+ * @returns {Object} 包含饱和液体线和饱和气体线的 P-h 数据
+ */
+function generateSaturationLinesPH(fluid, Pe_Pa, Pc_Pa, numPoints = 100) {
+    if (!CP_INSTANCE) return { liquidPH: [], vaporPH: [] };
+    
+    const liquidPoints = [];
+    const vaporPoints = [];
+    
+    // 计算压力范围（从蒸发压力到冷凝压力）
+    const P_min = Math.min(Pe_Pa, Pc_Pa) * 0.8;
+    const P_max = Math.max(Pe_Pa, Pc_Pa) * 1.2;
+    
+    // 对数分布压力点（因为压力通常是对数分布的）
+    for (let i = 0; i <= numPoints; i++) {
+        const logP_min = Math.log10(P_min);
+        const logP_max = Math.log10(P_max);
+        const logP = logP_min + (logP_max - logP_min) * (i / numPoints);
+        const P_Pa = Math.pow(10, logP);
+        
+        try {
+            // 饱和液体线 (Q=0)
+            const h_liq = CP_INSTANCE.PropsSI('H', 'P', P_Pa, 'Q', 0, fluid);
+            
+            // 饱和气体线 (Q=1)
+            const h_vap = CP_INSTANCE.PropsSI('H', 'P', P_Pa, 'Q', 1, fluid);
+            
+            // P-h 图数据点
+            liquidPoints.push([h_liq / 1000, P_Pa / 1e5]); // [h (kJ/kg), P (bar)]
+            vaporPoints.push([h_vap / 1000, P_Pa / 1e5]);
+            
+        } catch (e) {
+            // 如果某个压力点计算失败，跳过
+            continue;
+        }
+    }
+    
+    return {
+        liquidPH: liquidPoints,
+        vaporPH: vaporPoints
+    };
+}
+
+/**
+ * 生成 T-S 图的饱和线数据点
+ * @param {string} fluid - 工质名称
+ * @param {number} Te_C - 蒸发温度 (°C)
+ * @param {number} Tc_C - 冷凝温度 (°C)
+ * @param {number} numPoints - 数据点数量
+ * @returns {Object} 包含饱和液体线和饱和气体线的 T-S 数据
+ */
+function generateSaturationLinesTS(fluid, Te_C, Tc_C, numPoints = 100) {
+    if (!CP_INSTANCE) return { liquid: [], vapor: [] };
+    
+    const liquidPoints = [];
+    const vaporPoints = [];
+    
+    // 计算温度范围
+    const T_min = Math.min(Te_C, Tc_C) - 20;
+    const T_max = Math.max(Te_C, Tc_C) + 20;
+    
+    for (let i = 0; i <= numPoints; i++) {
+        const T_C = T_min + (T_max - T_min) * (i / numPoints);
+        const T_K = T_C + 273.15;
+        
+        try {
+            // 饱和液体线 (Q=0)
+            const s_liq = CP_INSTANCE.PropsSI('S', 'T', T_K, 'Q', 0, fluid);
+            
+            // 饱和气体线 (Q=1)
+            const s_vap = CP_INSTANCE.PropsSI('S', 'T', T_K, 'Q', 1, fluid);
+            
+            // T-S 图数据点
+            liquidPoints.push([s_liq / 1000, T_C]); // [s (kJ/kg·K), T (°C)]
+            vaporPoints.push([s_vap / 1000, T_C]);
+            
+        } catch (e) {
+            continue;
+        }
+    }
+    
+    return {
+        liquid: liquidPoints,
+        vapor: vaporPoints
+    };
+}
+
+/**
+ * 将 P-h 图的点转换为 T-s 图的点
+ * @param {string} fluid - 工质名称
+ * @param {Array} points - P-h 图的点数组，格式为 { name, value: [h, p], label }
+ * @returns {Array} T-s 图的点数组，格式为 { name, value: [s, T], label }
+ */
+function convertPointsToTS(fluid, points) {
+    if (!CP_INSTANCE) return [];
+    
+    const tsPoints = [];
+    
+    for (const pt of points) {
+        if (!pt || !pt.value) continue;
+        
+        const [h_kJ, p_bar] = pt.value;
+        const h_J = h_kJ * 1000;
+        const p_Pa = p_bar * 1e5;
+        
+        try {
+            const s_J = CP_INSTANCE.PropsSI('S', 'H', h_J, 'P', p_Pa, fluid);
+            const T_K = CP_INSTANCE.PropsSI('T', 'H', h_J, 'P', p_Pa, fluid);
+            const T_C = T_K - 273.15;
+            
+            // 为 T-s 图智能设置标签位置，避免重叠
+            // 根据点的名称和位置决定标签位置
+            let labelPos = 'right'; // 默认右侧
+            if (pt.name) {
+                // 根据点名称设置位置，避免重叠
+                if (pt.name === '1' || pt.name === "1'") {
+                    labelPos = 'right'; // 蒸发器出口，通常在右侧
+                } else if (pt.name === '2') {
+                    labelPos = 'top'; // 排气点，通常在顶部
+                } else if (pt.name === '3') {
+                    labelPos = 'top'; // 冷凝器出口，改为顶部避免与饱和线重叠
+                } else if (pt.name === '4') {
+                    labelPos = 'bottom'; // 蒸发器入口，通常在底部
+                } else if (pt.name === '5' || pt.name === "5'") {
+                    labelPos = 'left'; // 膨胀阀入口，通常在左侧
+                } else if (pt.name === 'mid' || pt.name === 'mix') {
+                    labelPos = 'top'; // 中间点，通常在顶部
+                } else if (pt.name === '6' || pt.name === '7') {
+                    labelPos = 'right'; // ECO 相关点，通常在右侧
+                }
+            }
+            
+            // 保留原有的 label 配置，但更新位置
+            // 如果原标签显示（或未设置），则显示标签并设置位置
+            const labelConfig = pt.label ? { ...pt.label } : {};
+            // 主循环的点（1, 2, 3, 4, 1', 5'等）应该显示标签
+            const shouldShow = labelConfig.show !== false;
+            if (shouldShow) {
+                labelConfig.position = labelPos;
+                labelConfig.show = true;
+            }
+            
+            tsPoints.push({
+                name: pt.name,
+                value: [s_J / 1000, T_C], // [s (kJ/kg·K), T (°C)]
+                label: labelConfig
+            });
+        } catch (e) {
+            console.warn(`Failed to convert point ${pt.name} to T-S:`, e);
+        }
+    }
+    
+    return tsPoints;
 }
 
 // ---------------------------------------------------------------------
@@ -320,8 +520,38 @@ function calculateMode2() {
 
                     let V_th_m3_s = 0;
                     if (flow_mode === 'rpm') {
-                        const disp = parseFloat(document.getElementById('displacement_m2').value);
-                        V_th_m3_s = currentRpm * (disp / 1e6) / 60.0;
+                        // RCC Pro: 基于转速的线性插值计算扫气量
+                        const brand = compressorBrandM2?.value;
+                        const series = compressorSeriesM2?.value;
+                        const model = compressorModelM2?.value;
+                        
+                        if (brand && series && model) {
+                            const modelDetail = getModelDetail(brand, series, model);
+                            if (modelDetail && modelDetail.swept_volume_max_m3h && modelDetail.max_rpm) {
+                                // 使用线性插值: V_sw = V_sw_max × (n_actual / n_max)
+                                const V_sw_max_m3h = modelDetail.swept_volume_max_m3h;
+                                const n_max = modelDetail.max_rpm;
+                                const V_sw_m3h = V_sw_max_m3h * (currentRpm / n_max);
+                                
+                                // 验证转速范围
+                                if (modelDetail.rpm_range) {
+                                    const [rpm_min, rpm_max] = modelDetail.rpm_range;
+                                    if (currentRpm < rpm_min || currentRpm > rpm_max) {
+                                        console.warn(`[RCC Pro] RPM ${currentRpm} outside allowed range [${rpm_min}, ${rpm_max}]`);
+                                    }
+                                }
+                                
+                                V_th_m3_s = V_sw_m3h / 3600.0;
+                            } else {
+                                // 回退到旧逻辑（如果数据不完整）
+                                const disp = parseFloat(document.getElementById('displacement_m2').value);
+                                V_th_m3_s = currentRpm * (disp / 1e6) / 60.0;
+                            }
+                        } else {
+                            // 回退到旧逻辑（如果没有选择压缩机型号）
+                            const disp = parseFloat(document.getElementById('displacement_m2').value);
+                            V_th_m3_s = currentRpm * (disp / 1e6) / 60.0;
+                        }
                     } else {
                         const flow_m3h = parseFloat(flowM3hM2.value);
                         V_th_m3_s = flow_m3h / 3600.0;
@@ -460,23 +690,36 @@ function calculateMode2() {
             const Q_evap_W = m_dot_suc * (h_1 - h_liq_out); 
             const W_input_W = W_shaft_W / motor_eff;
 
+            // RCC Pro: 活塞压缩机排气温度计算（基于等熵效率，无油冷）
             const h6_safe = isEcoEnabled ? h_6 : 0;
             const h_system_in = (m_dot_suc * h_suc + m_dot_inj * h6_safe); 
-            const T_2a_est_K = T_2a_est_C + 273.15;
-            const h_2a_target = CP_INSTANCE.PropsSI('H', 'T', T_2a_est_K, 'P', Pc_Pa, fluid);
-            const energy_out_gas = m_dot_total * h_2a_target;
-            let Q_oil_W = W_shaft_W - (energy_out_gas - h_system_in);
-            let T_2a_final_C = T_2a_est_C;
-
-            if (Q_oil_W < 0) {
-                Q_oil_W = 0;
-                const h_2a_real = (h_system_in + W_shaft_W) / m_dot_total;
-                const T_2a_real_K = CP_INSTANCE.PropsSI('T', 'P', Pc_Pa, 'H', h_2a_real, fluid);
-                T_2a_final_C = T_2a_real_K - 273.15;
+            
+            // 计算等熵压缩终点焓值
+            let h_2s = 0;
+            if (!isEcoEnabled) {
+                h_2s = CP_INSTANCE.PropsSI('H', 'P', Pc_Pa, 'S', s_suc, fluid);
+            } else {
+                // 双级压缩：先计算第一级等熵压缩
+                const h_mid_1s = CP_INSTANCE.PropsSI('H', 'P', P_eco_Pa, 'S', s_suc, fluid);
+                const h_mix_s = (m_dot_suc * h_mid_1s + m_dot_inj * h_6) / m_dot_total;
+                const s_mix = CP_INSTANCE.PropsSI('S', 'H', h_mix_s, 'P', P_eco_Pa, fluid);
+                h_2s = CP_INSTANCE.PropsSI('H', 'P', Pc_Pa, 'S', s_mix, fluid);
             }
-            const h_2a_final = (h_system_in + W_shaft_W - Q_oil_W) / m_dot_total;
+            
+            // 实际排气焓值：h_dis = h_suc + (h_dis_is - h_suc) / η_is
+            const h_2a_final = h_system_in + (h_2s - h_system_in) / eta_s_display;
+            const T_2a_final_K = CP_INSTANCE.PropsSI('T', 'P', Pc_Pa, 'H', h_2a_final, fluid);
+            const T_2a_final_C = T_2a_final_K - 273.15;
+            
+            // 排气温度保护：如果超过 150°C，显示警告
+            if (T_2a_final_C > 150) {
+                console.warn(`[RCC Pro] 排气温度 ${T_2a_final_C.toFixed(1)}°C 超过 150°C，建议检查输入参数或降低压比`);
+            }
+            
+            // 活塞压缩机无油冷，Q_oil_W = 0
+            const Q_oil_W = 0;
             const Q_cond_W = m_dot_total * (h_2a_final - h_3);
-            const Q_heating_total_W = Q_cond_W + Q_oil_W;
+            const Q_heating_total_W = Q_cond_W;
 
             const COP_R = Q_evap_W / W_input_W;
             const COP_H = Q_heating_total_W / W_input_W;
@@ -487,6 +730,7 @@ function calculateMode2() {
             
             // 1. SLHX Benefit (Current vs No-SLHX)
             let slhxHtml = '';
+            let slhxSelection = null;
             if (isSlhxEnabled) {
                 const m_dot_base = m_dot_suc * (rho_1 / rho_suc);
                 const q_cool_base = m_dot_base * (h_1 - h_liq_in);
@@ -522,6 +766,54 @@ function calculateMode2() {
                     COPh: { val: COP_H.toFixed(2), diff: ((COP_H - cop_h_base)/cop_h_base)*100 }
                 };
 
+                // 计算回热器选型参数
+                const P_liq_side = (isEcoEnabled && ecoType === 'flash_tank') ? P_eco_Pa : Pc_Pa;
+                const T_liq_in = CP_INSTANCE.PropsSI('T', 'H', h_liq_in, 'P', P_liq_side, fluid) - 273.15;
+                const T_liq_out = CP_INSTANCE.PropsSI('T', 'H', h_liq_out, 'P', P_liq_side, fluid) - 273.15;
+                const T_vap_in = T_1_K - 273.15;
+                const T_vap_out = T_suc_K - 273.15;
+                
+                const Cp_liq = CP_INSTANCE.PropsSI('C', 'H', h_liq_in, 'P', P_liq_side, fluid);
+                const Cp_vap = CP_INSTANCE.PropsSI('C', 'H', h_1, 'P', Pe_Pa, fluid);
+                const C_liq = m_dot_suc * Cp_liq;
+                const C_vap = m_dot_suc * Cp_vap;
+                const C_min = Math.min(C_liq, C_vap);
+                const Q_max = C_min * (T_liq_in - T_vap_in);
+                const Q_slhx = slhxEff * Q_max;
+
+                slhxSelection = {
+                    hot_side: {
+                        inlet: {
+                            T_C: T_liq_in,
+                            P_bar: P_liq_side / 1e5,
+                            h_kJ: h_liq_in / 1000,
+                            m_dot: m_dot_suc
+                        },
+                        outlet: {
+                            T_C: T_liq_out,
+                            P_bar: P_liq_side / 1e5,
+                            h_kJ: h_liq_out / 1000,
+                            m_dot: m_dot_suc
+                        },
+                        Q_kW: Q_slhx / 1000
+                    },
+                    cold_side: {
+                        inlet: {
+                            T_C: T_vap_in,
+                            P_bar: Pe_Pa / 1e5,
+                            h_kJ: h_1 / 1000,
+                            m_dot: m_dot_suc
+                        },
+                        outlet: {
+                            T_C: T_vap_out,
+                            P_bar: Pe_Pa / 1e5,
+                            h_kJ: h_suc / 1000,
+                            m_dot: m_dot_suc
+                        },
+                        Q_kW: Q_slhx / 1000
+                    }
+                };
+
                 slhxHtml = `
                     ${createSectionHeader('SLHX Benefit', '🔥')}
                     ${createImpactGrid(slhxData, 'orange')}
@@ -531,6 +823,8 @@ function calculateMode2() {
 
             // 2. ECO Benefit (Current vs No-ECO)
             let ecoHtml = '';
+            let economizerSelection = null;
+            let flashTankSelection = null;
             if (isEcoEnabled) {
                 const q_cool_base_eco = m_dot_suc * (h_suc - h_3); 
                 const h_2s_base_eco = CP_INSTANCE.PropsSI('H', 'P', Pc_Pa, 'S', s_suc, fluid);
@@ -547,6 +841,91 @@ function calculateMode2() {
                     COPc: { val: COP_R.toFixed(2), diff: ((COP_R - cop_c_base_eco)/cop_c_base_eco)*100 },
                     COPh: { val: COP_H.toFixed(2), diff: ((COP_H - cop_h_base_eco)/cop_h_base_eco)*100 }
                 };
+
+                // 计算经济器选型参数
+                const T_3_C = T_3_K - 273.15;
+                const T_eco_sat_C = T_eco_sat_K - 273.15;
+                
+                if (ecoType === 'flash_tank') {
+                    // 闪蒸罐模式：计算闪蒸罐选型参数
+                    const T_7_C = CP_INSTANCE.PropsSI('T', 'H', h_7, 'P', P_eco_Pa, fluid) - 273.15;
+                    const T_5_C = CP_INSTANCE.PropsSI('T', 'P', P_eco_Pa, 'Q', 0, fluid) - 273.15;
+                    const T_6_C = CP_INSTANCE.PropsSI('T', 'P', P_eco_Pa, 'Q', 1, fluid) - 273.15;
+                    
+                    // 计算闪蒸干度
+                    const x_flash = (h_7 - h_5) / (h_6 - h_5);
+                    const vapor_liquid_ratio = m_dot_inj / m_dot_suc;
+                    
+                    flashTankSelection = {
+                        working_pressure: P_eco_Pa / 1e5,
+                        sat_temp: T_eco_sat_C,
+                        inlet: {
+                            T_C: T_7_C,
+                            P_bar: P_eco_Pa / 1e5,
+                            h_kJ: h_7 / 1000,
+                            quality: x_flash
+                        },
+                        outlet_vapor: {
+                            T_C: T_6_C,
+                            P_bar: P_eco_Pa / 1e5,
+                            h_kJ: h_6 / 1000,
+                            m_dot: m_dot_inj
+                        },
+                        outlet_liquid: {
+                            T_C: T_5_C,
+                            P_bar: P_eco_Pa / 1e5,
+                            h_kJ: h_5 / 1000,
+                            m_dot: m_dot_suc
+                        },
+                        flash_quality: x_flash,
+                        vapor_liquid_ratio: vapor_liquid_ratio,
+                        total_inlet_flow: m_dot_total,
+                        vapor_outlet_flow: m_dot_inj,
+                        liquid_outlet_flow: m_dot_suc
+                    };
+                } else {
+                    // 过冷器模式：计算换热器选型参数
+                    const T_7_C = CP_INSTANCE.PropsSI('T', 'H', h_7, 'P', P_eco_Pa, fluid) - 273.15;
+                    const T_5_K = T_eco_sat_K + eco_dt_K;
+                    const T_5_C = T_5_K - 273.15;
+                    const T_inj_K = T_eco_sat_K + eco_superheat_K;
+                    const T_6_C = T_inj_K - 273.15;
+                    const Q_eco_hot_W = m_dot_suc * (h_3 - h_5);
+                    const Q_eco_cold_W = m_dot_inj * (h_6 - h_7);
+                    
+                    economizerSelection = {
+                        hot_side: {
+                            inlet: {
+                                T_C: T_3_C,
+                                P_bar: Pc_Pa / 1e5,
+                                h_kJ: h_3 / 1000,
+                                m_dot: m_dot_suc
+                            },
+                            outlet: {
+                                T_C: T_5_C,
+                                P_bar: Pc_Pa / 1e5,
+                                h_kJ: h_5 / 1000,
+                                m_dot: m_dot_suc
+                            },
+                            Q_kW: Q_eco_hot_W / 1000
+                        },
+                        cold_side: {
+                            inlet: {
+                                T_C: T_7_C,
+                                P_bar: P_eco_Pa / 1e5,
+                                h_kJ: h_7 / 1000,
+                                m_dot: m_dot_inj
+                            },
+                            outlet: {
+                                T_C: T_6_C,
+                                P_bar: P_eco_Pa / 1e5,
+                                h_kJ: h_6 / 1000,
+                                m_dot: m_dot_inj
+                            },
+                            Q_kW: Q_eco_cold_W / 1000
+                        }
+                    };
+                }
 
                 ecoHtml = `
                     ${createSectionHeader('Economizer Benefit', '⚡')}
@@ -638,11 +1017,43 @@ function calculateMode2() {
                 }
             }
 
+            // 生成饱和线数据
+            const satLinesPH = generateSaturationLinesPH(fluid, Pe_Pa, Pc_Pa);
+            const satLinesTS = generateSaturationLinesTS(fluid, Te_C, Tc_C);
+            
+            // 生成 T-s 图数据点
+            const mainPointsTS = convertPointsToTS(fluid, mainPoints);
+            const ecoLiquidPointsTS = convertPointsToTS(fluid, ecoLiquidPoints);
+            const ecoVaporPointsTS = convertPointsToTS(fluid, ecoVaporPoints);
+            
+            // 保存图表数据以便切换
+            lastCalculationData = lastCalculationData || {};
+            lastCalculationData.chartData = {
+                chartType: 'ph', // 默认显示 P-h 图
+                fluid,
+                mainPoints,
+                ecoLiquidPoints,
+                ecoVaporPoints,
+                mainPointsTS,
+                ecoLiquidPointsTS,
+                ecoVaporPointsTS,
+                satLinesPH,
+                satLinesTS,
+                isSlhxEnabled,
+                isEcoEnabled
+            };
+            
+            // 绘制 P-h 图（默认）
             ['chart-desktop-m2', 'chart-mobile-m2'].forEach(id => {
                 drawPHDiagram(id, {
                     title: `P-h Diagram (${fluid}) [${isSlhxEnabled?'SLHX+':''}${isEcoEnabled?'ECO+':''}]`,
-                    mainPoints, ecoLiquidPoints, ecoVaporPoints,
-                    xLabel: 'Enthalpy (kJ/kg)', yLabel: 'Pressure (bar)'
+                    mainPoints, 
+                    ecoLiquidPoints, 
+                    ecoVaporPoints,
+                    saturationLiquidPoints: satLinesPH.liquidPH,
+                    saturationVaporPoints: satLinesPH.vaporPH,
+                    xLabel: 'Enthalpy (kJ/kg)', 
+                    yLabel: 'Pressure (bar)'
                 });
             });
 
@@ -726,13 +1137,13 @@ function calculateMode2() {
 
             let html = `
                 <div class="grid grid-cols-2 gap-4 mb-6">
-                    ${createKpiCard('制冷量 (Cooling)', (Q_evap_W/1000).toFixed(2), 'kW', `COP: ${COP_R.toFixed(2)}`, 'blue')}
-                    ${createKpiCard('总供热 (Heating)', (Q_heating_total_W/1000).toFixed(2), 'kW', `COP: ${COP_H.toFixed(2)}`, 'orange')}
+                    ${createKpiCard(i18next.t('components.coolingCapacity'), (Q_evap_W/1000).toFixed(2), 'kW', `COP: ${COP_R.toFixed(2)}`, 'blue')}
+                    ${createKpiCard(i18next.t('components.heatingCapacity'), (Q_heating_total_W/1000).toFixed(2), 'kW', `COP: ${COP_H.toFixed(2)}`, 'orange')}
                 </div>
                 <div class="space-y-1 bg-white/40 p-4 rounded-2xl border border-white/50 shadow-inner">
-                    ${createSectionHeader('Power & Efficiency')}
-                    ${createDetailRow('Input Power', `${(W_input_W/1000).toFixed(2)} kW`, true)}
-                    ${createDetailRow('Shaft Power', `${(W_shaft_W/1000).toFixed(2)} kW`)}
+                    ${createSectionHeader(i18next.t('components.powerAndEfficiency'))}
+                    ${createDetailRow(i18next.t('mode2.inputPower'), `${(W_input_W/1000).toFixed(2)} kW`, true)}
+                    ${createDetailRow(i18next.t('components.shaftPower'), `${(W_shaft_W/1000).toFixed(2)} kW`)}
                     ${createDetailRow('Oil Load', `${(Q_oil_W/1000).toFixed(2)} kW`)}
                     ${createDetailRow('Calc Logic', efficiency_info_text)}
                     ${createDetailRow('Volumetric Eff (η_v)', displayEtaV, AppState.currentMode === 'polynomial')}
@@ -745,17 +1156,28 @@ function calculateMode2() {
 
                     ${createSectionHeader('State Points Detail', '📊')}
                     ${createStateTable(statePoints)}
+                    
+                    ${flashTankSelection ? createFlashTankSelectionTable(flashTankSelection, '闪蒸罐选型参数', '⚡') : ''}
+                    ${economizerSelection ? createHeatExchangerSelectionTable(economizerSelection, i18next.t('components.subcoolerSelection'), '🌡️') : ''}
+                    ${slhxSelection ? createHeatExchangerSelectionTable(slhxSelection, i18next.t('components.slhxSelection'), '🔥') : ''}
                 </div>
             `;
 
             renderToAllViews(html);
-            updateMobileSummary('Cooling', `${(Q_evap_W/1000).toFixed(1)} kW`, 'COP', COP_R.toFixed(2));
+            updateMobileSummary(i18next.t('mode2.coolingCapacity'), `${(Q_evap_W/1000).toFixed(1)} kW`, 'COP', COP_R.toFixed(2));
             openMobileSheet('m2');
             
             setButtonFresh2();
             if(printButtonM2) printButtonM2.disabled = false;
 
-            lastCalculationData = { fluid, statePoints, COP_R, COP_H, Q_evap_W, Q_cond_W, Q_oil_W };
+            // 更新 lastCalculationData，保留图表数据
+            lastCalculationData.fluid = fluid;
+            lastCalculationData.statePoints = statePoints;
+            lastCalculationData.COP_R = COP_R;
+            lastCalculationData.COP_H = COP_H;
+            lastCalculationData.Q_evap_W = Q_evap_W;
+            lastCalculationData.Q_cond_W = Q_cond_W;
+            lastCalculationData.Q_oil_W = Q_oil_W;
             
             AppState.updateVSD(isVsdEnabled, ratedRpm, currentRpm);
             AppState.updateSLHX(isSlhxEnabled, slhxEff);
@@ -851,6 +1273,16 @@ export function initMode2(CP) {
         });
 
         if (printButtonM2) printButtonM2.addEventListener('click', printReportMode2);
+        
+        // 绑定图表切换按钮
+        const toggleBtn = document.getElementById('chart-toggle-m2');
+        const toggleBtnMobile = document.getElementById('chart-toggle-m2-mobile');
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', toggleChartTypeM2);
+        }
+        if (toggleBtnMobile) {
+            toggleBtnMobile.addEventListener('click', toggleChartTypeM2);
+        }
     }
     console.log("Mode 2 (v7.4.4 Fix) initialized.");
 }
@@ -863,6 +1295,76 @@ function printReportMode2() {
     d.statePoints.forEach(p => { tableText += `${p.name}\t${p.temp}\t${p.press}\t${p.enth}\t${p.flow}\n`; });
     resultDiv.innerText = `Full report generated at ${new Date().toLocaleString()}` + tableText;
     window.print();
+}
+
+// 图表切换函数
+function toggleChartTypeM2() {
+    if (!lastCalculationData || !lastCalculationData.chartData) return;
+    
+    const chartData = lastCalculationData.chartData;
+    const currentType = chartData.chartType;
+    const newType = currentType === 'ph' ? 'ts' : 'ph';
+    chartData.chartType = newType;
+    
+    // 确保图表容器可见
+    ['chart-desktop-m2', 'chart-mobile-m2'].forEach(id => {
+        const container = document.getElementById(id);
+        if (container) {
+            container.classList.remove('hidden');
+        }
+    });
+    
+    if (newType === 'ph') {
+        // 切换到 P-h 图
+        ['chart-desktop-m2', 'chart-mobile-m2'].forEach(id => {
+            // 清除旧图表配置
+            const chart = getChartInstance(id);
+            if (chart) {
+                chart.clear();
+            }
+            
+            drawPHDiagram(id, {
+                title: `P-h Diagram (${chartData.fluid}) [${chartData.isSlhxEnabled?'SLHX+':''}${chartData.isEcoEnabled?'ECO+':''}]`,
+                mainPoints: chartData.mainPoints,
+                ecoLiquidPoints: chartData.ecoLiquidPoints,
+                ecoVaporPoints: chartData.ecoVaporPoints,
+                saturationLiquidPoints: chartData.satLinesPH.liquidPH,
+                saturationVaporPoints: chartData.satLinesPH.vaporPH,
+                xLabel: 'Enthalpy (kJ/kg)',
+                yLabel: 'Pressure (bar)'
+            });
+        });
+    } else {
+        // 切换到 T-S 图
+        ['chart-desktop-m2', 'chart-mobile-m2'].forEach(id => {
+            // 清除旧图表配置
+            const chart = getChartInstance(id);
+            if (chart) {
+                chart.clear();
+            }
+            
+            drawTSDiagram(id, {
+                title: `T-s Diagram (${chartData.fluid}) [${chartData.isSlhxEnabled?'SLHX+':''}${chartData.isEcoEnabled?'ECO+':''}]`,
+                mainPoints: chartData.mainPointsTS,
+                ecoLiquidPoints: chartData.ecoLiquidPointsTS,
+                ecoVaporPoints: chartData.ecoVaporPointsTS,
+                saturationLiquidPoints: chartData.satLinesTS.liquid,
+                saturationVaporPoints: chartData.satLinesTS.vapor,
+                xLabel: 'Entropy (kJ/kg·K)',
+                yLabel: 'Temperature (°C)'
+            });
+        });
+    }
+    
+    // 更新按钮文本
+    const toggleBtn = document.getElementById('chart-toggle-m2');
+    const toggleBtnMobile = document.getElementById('chart-toggle-m2-mobile');
+    if (toggleBtn) {
+        toggleBtn.textContent = newType === 'ph' ? i18next.t('ui.switchToTS') : i18next.t('ui.switchToPH');
+    }
+    if (toggleBtnMobile) {
+        toggleBtnMobile.textContent = newType === 'ph' ? i18next.t('ui.switchToTS') : i18next.t('ui.switchToPH');
+    }
 }
 
 export function triggerMode2EfficiencyUpdate() {

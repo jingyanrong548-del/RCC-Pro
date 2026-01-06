@@ -4,7 +4,7 @@
 // =====================================================================
 
 import { updateFluidInfo } from './coolprop_loader.js';
-import { calculateEmpiricalEfficiencies } from './efficiency_models.js';
+import { calculateEmpiricalEfficiencies, calculateReciprocatingVolumetricEfficiency } from './efficiency_models.js';
 import { 
     createKpiCard, 
     createDetailRow, 
@@ -15,12 +15,14 @@ import {
 import { drawPHDiagram } from './charts.js';
 import { HistoryDB, SessionState } from './storage.js';
 import { AppState } from './state.js';
+import i18next from './i18n.js';
 import { openMobileSheet } from './ui.js';
 import { 
     getFilteredBrands,
     getFilteredSeriesByBrand,
     getModelsBySeries, 
-    getDisplacementByModel 
+    getDisplacementByModel,
+    getModelDetail
 } from './compressor_models.js'; 
 
 let CP_INSTANCE = null;
@@ -41,16 +43,16 @@ let compressorBrandM3, compressorSeriesM3, compressorModelM3, modelDisplacementI
 let flowM3hM3;
 
 // Button States
-const BTN_TEXT_CALCULATE = "Calculate Gas Compression";
-const BTN_TEXT_RECALCULATE = "Recalculate (Input Changed)";
+const getBtnTextCalculate = () => i18next.t('common.calculate');
+const getBtnTextRecalculate = () => i18next.t('common.recalculate');
 
 // ---------------------------------------------------------------------
 // Helper Functions
 // ---------------------------------------------------------------------
 
 function setButtonStale3() {
-    if (calcButtonM3 && calcButtonM3.innerText !== BTN_TEXT_RECALCULATE) {
-        calcButtonM3.innerText = BTN_TEXT_RECALCULATE;
+    if (calcButtonM3 && calcButtonM3.innerText !== getBtnTextRecalculate()) {
+        calcButtonM3.innerText = getBtnTextRecalculate();
         calcButtonM3.classList.add('opacity-90', 'ring-2', 'ring-yellow-400', 'ring-offset-2');
         if(printButtonM3) {
             printButtonM3.disabled = true;
@@ -61,7 +63,7 @@ function setButtonStale3() {
 
 function setButtonFresh3() {
     if (calcButtonM3) {
-        calcButtonM3.innerText = BTN_TEXT_CALCULATE;
+        calcButtonM3.innerText = getBtnTextCalculate();
         calcButtonM3.classList.remove('opacity-90', 'ring-2', 'ring-yellow-400', 'ring-offset-2');
     }
 }
@@ -75,7 +77,7 @@ function updateMobileSummary(powerValue, effLabel, effValue) {
     if (!summaryMobileM3) return;
     summaryMobileM3.innerHTML = `
         <div>
-            <p class="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Shaft Power</p>
+            <p class="text-[10px] text-gray-500 uppercase tracking-wider font-bold">${i18next.t('mode3.shaftPowerLabel')}</p>
             <p class="text-xl font-bold text-gray-900">${powerValue}</p>
         </div>
         <div class="text-right">
@@ -92,17 +94,52 @@ function updateAndDisplayEfficienciesM3() {
         const Pc_bar = parseFloat(pressOutM3.value);
         if (isNaN(Pe_bar) || isNaN(Pc_bar) || Pc_bar <= Pe_bar) return;
         
-        const pressureRatio = Pc_bar / Pe_bar;
-        const efficiencies = calculateEmpiricalEfficiencies(pressureRatio);
+        const Pe_Pa = Pe_bar * 1e5;
+        const Pc_Pa = Pc_bar * 1e5;
+        const fluid = fluidSelectM3.value;
         
-        if (etaVM3) etaVM3.value = efficiencies.eta_v;
+        // RCC Pro: 使用活塞压缩机容积效率计算
+        let clearance_factor = 0.04; // 默认值
+        const brand = compressorBrandM3?.value;
+        const series = compressorSeriesM3?.value;
+        const model = compressorModelM3?.value;
+        if (brand && series && model) {
+            const modelDetail = getModelDetail(brand, series, model);
+            if (modelDetail && modelDetail.clearance_factor) {
+                clearance_factor = modelDetail.clearance_factor;
+            }
+        }
+        
+        // 估算吸气温度（用于获取等熵指数）
+        const T_suc_K = 273.15 + 20; // 默认 20°C
+        
+        const eta_v = calculateReciprocatingVolumetricEfficiency(
+            Pc_Pa,
+            Pe_Pa,
+            clearance_factor,
+            null,
+            CP_INSTANCE,
+            fluid,
+            T_suc_K
+        );
+        
+        // 等熵效率：使用简化的活塞压缩机经验公式
+        const pressureRatio = Pc_bar / Pe_bar;
+        let eta_s = 0.80 - 0.01 * (pressureRatio - 3.0);
+        if (pressureRatio < 3.0) {
+            eta_s = 0.80 - 0.005 * (3.0 - pressureRatio);
+        }
+        eta_s = Math.max(0.65, Math.min(0.85, eta_s));
+        const eta_iso = eta_s * 0.94; // 等温效率
+        
+        if (etaVM3) etaVM3.value = eta_v.toFixed(4);
         
         const effTypeRadio = document.querySelector('input[name="eff_type_m3"]:checked');
         if (effTypeRadio && etaIsoM3) {
             if (effTypeRadio.value === 'isothermal') {
-                etaIsoM3.value = efficiencies.eta_iso;
+                etaIsoM3.value = eta_iso.toFixed(3);
             } else {
-                etaIsoM3.value = efficiencies.eta_s;
+                etaIsoM3.value = eta_s.toFixed(3);
             }
         }
     } catch (e) {
@@ -117,7 +154,7 @@ function updateAndDisplayEfficienciesM3() {
 function initCompressorModelSelectorsM3() {
     // Populate brand dropdown (Mode 3: 前川只保留N系列，其余品牌保留全部)
     const brands = getFilteredBrands('m3');
-    compressorBrandM3.innerHTML = '<option value="">-- 选择品牌 --</option>';
+    compressorBrandM3.innerHTML = `<option value="">${i18next.t('common.selectBrand')}</option>`;
     brands.forEach(brand => {
         const option = document.createElement('option');
         option.value = brand;
@@ -128,8 +165,8 @@ function initCompressorModelSelectorsM3() {
     // Brand change handler
     compressorBrandM3.addEventListener('change', () => {
         const brand = compressorBrandM3.value;
-        compressorSeriesM3.innerHTML = '<option value="">-- 选择系列 --</option>';
-        compressorModelM3.innerHTML = '<option value="">-- 选择型号 --</option>';
+        compressorSeriesM3.innerHTML = `<option value="">${i18next.t('common.selectSeries')}</option>`;
+        compressorModelM3.innerHTML = `<option value="">${i18next.t('common.selectModel')}</option>`;
         compressorSeriesM3.disabled = !brand;
         compressorModelM3.disabled = true;
         modelDisplacementInfoM3.classList.add('hidden');
@@ -150,7 +187,7 @@ function initCompressorModelSelectorsM3() {
     compressorSeriesM3.addEventListener('change', () => {
         const brand = compressorBrandM3.value;
         const series = compressorSeriesM3.value;
-        compressorModelM3.innerHTML = '<option value="">-- 选择型号 --</option>';
+        compressorModelM3.innerHTML = `<option value="">${i18next.t('common.selectModel')}</option>`;
         compressorModelM3.disabled = !series;
         modelDisplacementInfoM3.classList.add('hidden');
 
@@ -317,8 +354,37 @@ function calculateMode3() {
             
             if (flow_mode === 'rpm') {
                 currentRpm = parseFloat(document.getElementById('rpm_m3').value);
-                const disp = parseFloat(document.getElementById('displacement_m3').value);
-                V_th_m3_s = currentRpm * (disp / 1e6) / 60.0;
+                // RCC Pro: 基于转速的线性插值计算扫气量
+                const brand = compressorBrandM3?.value;
+                const series = compressorSeriesM3?.value;
+                const model = compressorModelM3?.value;
+                
+                if (brand && series && model) {
+                    const modelDetail = getModelDetail(brand, series, model);
+                    if (modelDetail && modelDetail.swept_volume_max_m3h && modelDetail.max_rpm) {
+                        const V_sw_max_m3h = modelDetail.swept_volume_max_m3h;
+                        const n_max = modelDetail.max_rpm;
+                        const V_sw_m3h = V_sw_max_m3h * (currentRpm / n_max);
+                        
+                        // 验证转速范围
+                        if (modelDetail.rpm_range) {
+                            const [rpm_min, rpm_max] = modelDetail.rpm_range;
+                            if (currentRpm < rpm_min || currentRpm > rpm_max) {
+                                console.warn(`[RCC Pro] RPM ${currentRpm} outside allowed range [${rpm_min}, ${rpm_max}]`);
+                            }
+                        }
+                        
+                        V_th_m3_s = V_sw_m3h / 3600.0;
+                    } else {
+                        // 回退到旧逻辑
+                        const disp = parseFloat(document.getElementById('displacement_m3').value);
+                        V_th_m3_s = currentRpm * (disp / 1e6) / 60.0;
+                    }
+                } else {
+                    // 回退到旧逻辑
+                    const disp = parseFloat(document.getElementById('displacement_m3').value);
+                    V_th_m3_s = currentRpm * (disp / 1e6) / 60.0;
+                }
             } else {
                 const flow_m3h = parseFloat(flowM3hM3.value);
                 V_th_m3_s = flow_m3h / 3600.0;
@@ -423,6 +489,10 @@ function calculateMode3() {
             const W_input_W = W_shaft_W / motor_eff;
 
             // 3.4 Heat Balance & Discharge State
+            // RCC Pro: 排气温度保护
+            if (T_2a_actual_C > 150) {
+                console.warn(`[RCC Pro] 排气温度 ${T_2a_actual_C.toFixed(1)}°C 超过 150°C，建议检查输入参数或降低压比`);
+            }
             const T_2a_act_K = T_2a_actual_C + 273.15;
             
             // Estimate Discharge Enthalpy (Dry Gas Part + Vapor Part at new Partial Pressures)
@@ -439,9 +509,9 @@ function calculateMode3() {
             }
             
             const Q_gas_heat_W = m_dot_total * (h_2a_mix - h_1_mix);
-            const Q_oil_W = W_shaft_W - Q_gas_heat_W;
-
-            if (Q_oil_W < 0) throw new Error(`Negative Oil Load (${(Q_oil_W/1000).toFixed(2)} kW). Check Discharge Temp.`);
+            // RCC Pro: 活塞压缩机无油冷，Q_oil_W = 0
+            // 对于活塞压缩机，压缩热主要通过缸壁冷却，不计算油冷负荷
+            const Q_oil_W = 0;
 
             // --- 4. Aftercooler & Condensation Calculation ---
             const isAcEnabled = acCheckbox ? acCheckbox.checked : false;

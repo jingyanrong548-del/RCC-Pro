@@ -14,7 +14,7 @@
 export const APP_VERSION = {
     major: 7,
     minor: 2,
-    patch: 2,
+    patch: 21,
     
     /**
      * 获取完整版本号字符串
@@ -103,7 +103,7 @@ export const APP_VERSION = {
         // 更新标题中的版本号
         const titleVersion = document.querySelector('.version-display');
         if (titleVersion) {
-            titleVersion.textContent = `OCC Pro ${this.getFull()}`;
+            titleVersion.textContent = `RCC Pro ${this.getFull()}`;
         }
     }
 };
