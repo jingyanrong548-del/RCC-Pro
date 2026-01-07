@@ -2687,12 +2687,24 @@
                                     <input type="number" id="temp_cond_m7" value="80" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
                                 </div>
                                 <div>
-                                    <label class="block text-xs text-gray-500 mb-1 ml-1">过热度 (K)</label>
-                                    <input type="number" id="superheat_m7" value="0" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
+                                    <label class="block text-xs text-gray-500 mb-1 ml-1">有用过热度 (K)</label>
+                                    <input type="number" id="useful_superheat_m7" value="5" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
+                                    <p class="text-[10px] text-gray-400 mt-0.5 ml-1">蒸发器内过热，计入制冷量</p>
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1 ml-1">总过热度 (K)</label>
+                                    <input type="number" id="superheat_m7" value="5" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
+                                    <p class="text-[10px] text-gray-400 mt-0.5 ml-1">压缩机吸气口过热</p>
                                 </div>
                                 <div>
                                     <label class="block text-xs text-gray-500 mb-1 ml-1">过冷度 (K)</label>
                                     <input type="number" id="subcooling_m7" value="0" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
+                                </div>
+                                <div class="flex items-center">
+                                    <div class="text-[10px] text-gray-500 bg-gray-50/60 rounded-lg px-2 py-1.5 w-full">
+                                        <span class="font-semibold">管道过热:</span> <span id="line_superheat_display_m7" class="text-cyan-700 font-bold">--</span> K
+                                        <span class="text-gray-400 ml-1">(自动计算)</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>

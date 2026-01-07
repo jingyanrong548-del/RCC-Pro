@@ -113,11 +113,16 @@ function updateAndDisplayEfficienciesM7() {
         if (!Pe_Pa || !Pc_Pa) return;
 
         // RCC Pro: 使用活塞压缩机容积效率计算
-        // 修复：如果过热度输入0，按0.01进行计算
-        let superheat_K_eff = parseFloat(document.getElementById('superheat_m7').value);
-        if (superheat_K_eff === 0) superheat_K_eff = 0.01;
-        if (isNaN(superheat_K_eff)) superheat_K_eff = 5; // 如果未输入，使用默认值5
-        const T_suc_K = Te_C + 273.15 + superheat_K_eff;
+        // 效率计算使用总过热（压缩机吸气状态）
+        let total_superheat_K_eff = parseFloat(document.getElementById('superheat_m7')?.value);
+        if (isNaN(total_superheat_K_eff) || total_superheat_K_eff < 0) {
+            // 如果总过热未输入或无效，尝试使用有用过热
+            const useful_superheat_K_eff = parseFloat(document.getElementById('useful_superheat_m7')?.value);
+            total_superheat_K_eff = isNaN(useful_superheat_K_eff) || useful_superheat_K_eff < 0 ? 5 : useful_superheat_K_eff;
+        }
+        // 注意：保留0值用于判断饱和状态，不要强制改为0.01
+        // 如果总过热=0，使用饱和温度；否则使用 Te_C + total_superheat_K_eff
+        const T_suc_K = (total_superheat_K_eff <= 0) ? (Te_C + 273.15) : (Te_C + 273.15 + total_superheat_K_eff);
         
         // 尝试从选中的压缩机型号获取余隙容积
         let clearance_factor = 0.04; // 默认值
@@ -787,9 +792,34 @@ function calculateMode7() {
             const fluid = 'R717'; // 固定为氨
             const Te_C = parseFloat(document.getElementById('temp_evap_m7').value);
             const Tc_C = parseFloat(document.getElementById('temp_cond_m7').value);
-            // 修复：如果过热度或过冷度输入0，都按0.01进行计算
-            let superheat_K = parseFloat(document.getElementById('superheat_m7').value);
-            if (superheat_K === 0) superheat_K = 0.01;
+            // =========================================================
+            // 过热分析：区分有用过热和总过热
+            // =========================================================
+            // =========================================================
+            // 过热分析：读取并处理有用过热和总过热
+            // =========================================================
+            // 注意：保留原始值用于判断饱和状态，不要强制改为0.01
+            let useful_superheat_K_raw = parseFloat(document.getElementById('useful_superheat_m7')?.value);
+            if (isNaN(useful_superheat_K_raw) || useful_superheat_K_raw < 0) useful_superheat_K_raw = 5; // 默认值
+            const useful_superheat_K = useful_superheat_K_raw; // 保留原始值，包括0
+            
+            let total_superheat_K_raw = parseFloat(document.getElementById('superheat_m7').value);
+            if (isNaN(total_superheat_K_raw) || total_superheat_K_raw < 0) {
+                // 如果总过热未输入或无效，默认等于有用过热
+                total_superheat_K_raw = useful_superheat_K_raw;
+            }
+            // 确保总过热 >= 有用过热（物理约束）
+            let total_superheat_K;
+            if (total_superheat_K_raw < useful_superheat_K) {
+                console.warn('[Mode7] 总过热小于有用过热，已自动调整为等于有用过热');
+                total_superheat_K = useful_superheat_K; // 调整为等于有用过热
+            } else {
+                total_superheat_K = total_superheat_K_raw; // 保留原始值，包括0
+            }
+            
+            // 计算管道过热（使用实际值，包括0）
+            const line_superheat_K = total_superheat_K - useful_superheat_K;
+            
             let subcooling_K = parseFloat(document.getElementById('subcooling_m7').value);
             if (subcooling_K === 0) subcooling_K = 0.01;
             
@@ -810,10 +840,33 @@ function calculateMode7() {
             const Pe_Pa = CP_INSTANCE.PropsSI('P', 'T', T_evap_K, 'Q', 1, fluid);
             const Pc_Pa = CP_INSTANCE.PropsSI('P', 'T', T_cond_K, 'Q', 1, fluid);
 
-            // Point 1: Evaporator Outlet
-            const T_1_K = T_evap_K + superheat_K;
-            const h_1 = CP_INSTANCE.PropsSI('H', 'T', T_1_K, 'P', Pe_Pa, fluid);
-            const rho_1 = CP_INSTANCE.PropsSI('D', 'T', T_1_K, 'P', Pe_Pa, fluid); 
+            // Point 1a: Evaporator Outlet (基于有用过热)
+            let T_1a_K, h_1a;
+            if (useful_superheat_K <= 0) {
+                // 饱和状态：使用干度Q=1计算（更准确）
+                T_1a_K = T_evap_K; // 饱和温度
+                h_1a = CP_INSTANCE.PropsSI('H', 'P', Pe_Pa, 'Q', 1, fluid);
+            } else {
+                // 过热状态：使用温度计算
+                T_1a_K = T_evap_K + useful_superheat_K;
+                h_1a = CP_INSTANCE.PropsSI('H', 'T', T_1a_K, 'P', Pe_Pa, fluid);
+            }
+            
+            // Point 1: Compressor Suction (基于总过热)
+            let T_1_K, h_1, rho_1;
+            if (total_superheat_K <= 0) {
+                // 饱和状态：使用干度Q=1计算（更准确）
+                T_1_K = T_evap_K; // 饱和温度
+                h_1 = CP_INSTANCE.PropsSI('H', 'P', Pe_Pa, 'Q', 1, fluid);
+                rho_1 = CP_INSTANCE.PropsSI('D', 'P', Pe_Pa, 'Q', 1, fluid); // 饱和蒸气密度（较大）
+                console.log(`[Mode7 Debug] 总过热=0，使用饱和状态：rho_1=${rho_1.toFixed(3)} kg/m³`);
+            } else {
+                // 过热状态：使用温度计算
+                T_1_K = T_evap_K + total_superheat_K;
+                h_1 = CP_INSTANCE.PropsSI('H', 'T', T_1_K, 'P', Pe_Pa, fluid);
+                rho_1 = CP_INSTANCE.PropsSI('D', 'T', T_1_K, 'P', Pe_Pa, fluid); // 过热蒸气密度（较小）
+                console.log(`[Mode7 Debug] 总过热=${total_superheat_K.toFixed(1)}K，使用过热状态：rho_1=${rho_1.toFixed(3)} kg/m³`);
+            } 
             
             // Point 3: Condenser Outlet
             const T_3_K = T_cond_K - subcooling_K;
@@ -825,7 +878,13 @@ function calculateMode7() {
             const T_suc_K = T_1_K;
             const h_suc = h_1;
             const rho_suc = rho_1;
-            const s_suc = CP_INSTANCE.PropsSI('S', 'T', T_suc_K, 'P', Pe_Pa, fluid);
+            // 熵值计算：如果总过热=0，使用饱和状态；否则使用温度计算
+            let s_suc;
+            if (total_superheat_K <= 0) {
+                s_suc = CP_INSTANCE.PropsSI('S', 'P', Pe_Pa, 'Q', 1, fluid); // 饱和蒸气熵值
+            } else {
+                s_suc = CP_INSTANCE.PropsSI('S', 'T', T_suc_K, 'P', Pe_Pa, fluid);
+            }
             let m_dot_suc = 0, W_shaft_W = 0;
             const h_liq_out = h_3; 
 
@@ -878,6 +937,9 @@ function calculateMode7() {
                     }
                     m_dot_suc = V_th_m3_s * eta_v_input * rho_suc;
                     
+                    // 调试日志：验证质量流量计算
+                    console.log(`[Mode7 Debug] 质量流量计算：总过热=${total_superheat_K.toFixed(1)}K, V_th=${(V_th_m3_s*3600).toFixed(2)} m³/h, eta_v=${eta_v_input.toFixed(3)}, rho_suc=${rho_suc.toFixed(3)} kg/m³, m_dot=${(m_dot_suc*3600).toFixed(2)} kg/h`);
+                    
                     eta_v_display = eta_v_input;
                     eta_s_display = parseFloat(etaSM7.value);
                     // 修复：添加等熵效率验证，确保效率设定起作用
@@ -921,8 +983,15 @@ function calculateMode7() {
                 if (W_shaft_W > 0) eta_s_display = W_ideal_W / W_shaft_W;
             }
 
+            // =========================================================
+            // 制冷量计算：基于有用过热（蒸发器内吸收的热量）
+            // =========================================================
             // Q_evap_W will be recalculated after water circuit if subcooler is enabled
-            let Q_evap_W = m_dot_suc * (h_1 - h_liq_out); 
+            // 使用 h_1a（蒸发器出口，基于有用过热）而不是 h_1（压缩机吸气，基于总过热）
+            let Q_evap_W = m_dot_suc * (h_1a - h_liq_out);
+            
+            // 管道过热吸收的热量（通常很小，用于参考）
+            const Q_evap_line_W = m_dot_suc * (h_1 - h_1a); 
             const h_system_in = m_dot_suc * h_suc; 
             
             // =========================================================
@@ -1391,8 +1460,10 @@ function calculateMode7() {
             const h_liq_out_final = isSubcoolerEnabled ? h_3_final : h_liq_out;
             
             // Recalculate Q_evap_W if subcooler changed h_liq_out
+            // 仍然基于有用过热（h_1a）计算制冷量
             if (isSubcoolerEnabled) {
-                Q_evap_W = m_dot_suc * (h_1 - h_liq_out_final);
+                Q_evap_W = m_dot_suc * (h_1a - h_liq_out_final);
+                // 管道过热吸收的热量不变（与过冷器无关）
             }
             
             // #region agent log - Energy Balance Debug
@@ -1519,7 +1590,9 @@ function calculateMode7() {
 
             // 绘制系统示意图
             // 先收集节点数据（在statePoints创建之前需要的数据）
-            const T_1_C_diagram = Te_C + superheat_K;
+            // 图表显示使用总过热（压缩机吸气状态）
+            // 如果总过热=0，使用饱和温度；否则使用 Te_C + total_superheat_K
+            const T_1_C_diagram = (total_superheat_K <= 0) ? Te_C : (Te_C + total_superheat_K);
             const T_4_C_diagram = CP_INSTANCE.PropsSI('T','P',Pe_Pa,'H',h_liq_out_final,fluid) - 273.15;
             const T_3_final_C_diagram = isSubcoolerEnabled ? (CP_INSTANCE.PropsSI('T','P',Pc_Pa,'H',h_3_final,fluid)-273.15) : (T_3_K-273.15);
             
@@ -1621,8 +1694,10 @@ function calculateMode7() {
 
             // --- HTML Table ---
             // 注意：T_2_display_C, h_2_display, desc_2 已在前面定义（第1295-1305行）
+            // 点1：压缩机吸气口（基于总过热）
+            const T_1_C = T_1_K - 273.15;
             const statePoints = [
-                { name: '1', desc: 'Evap Out', temp: Te_C.toFixed(1), press: (Pe_Pa/1e5).toFixed(2), enth: (h_1/1000).toFixed(1), flow: m_dot_suc.toFixed(3) },
+                { name: '1', desc: 'Compressor Suction', temp: T_1_C.toFixed(1), press: (Pe_Pa/1e5).toFixed(2), enth: (h_1/1000).toFixed(1), flow: m_dot_suc.toFixed(3) },
                 { name: '2', desc: desc_2, temp: T_2_display_C.toFixed(1), press: (Pc_Pa/1e5).toFixed(2), enth: (h_2_display/1000).toFixed(1), flow: m_dot_suc.toFixed(3) }
             ];
             
@@ -2059,6 +2134,15 @@ function calculateMode7() {
                     ${createKpiCard(i18next.t('components.coolingCapacity'), (Q_evap_W/1000).toFixed(2), 'kW', `COP: ${COP_R.toFixed(2)}`, 'blue')}
                     ${createKpiCard(i18next.t('components.heatingCapacity'), (Q_heating_usable_W/1000).toFixed(2), 'kW', `COP: ${COP_H.toFixed(2)}`, 'orange')}
                 </div>
+                <div class="mb-4 p-3 bg-blue-50/80 border border-blue-200 rounded-xl text-xs">
+                    <div class="font-semibold text-blue-800 mb-1">🌡️ 过热分析：</div>
+                    <div class="text-blue-700 space-y-0.5">
+                        <div>• <strong>有用过热</strong>: ${useful_superheat_K.toFixed(1)} K (蒸发器内过热，计入制冷量)</div>
+                        <div>• <strong>管道过热</strong>: ${line_superheat_K.toFixed(1)} K (管道传热产生)</div>
+                        <div>• <strong>总过热</strong>: ${total_superheat_K.toFixed(1)} K (压缩机吸气口过热)</div>
+                        ${line_superheat_K > 0 ? `<div class="text-blue-600 italic mt-1">管道过热吸收热量: ${(Q_evap_line_W/1000).toFixed(2)} kW</div>` : ''}
+                    </div>
+                </div>
                 ${Q_cylinder_head_W > 0 ? `
                 <div class="mb-4 p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-xs">
                     <div class="font-semibold text-amber-800 mb-1">📊 热量统计说明：</div>
@@ -2155,11 +2239,15 @@ function calculateMode7() {
             lastCalculationData.COP_H = COP_H;
             lastCalculationData.COP_H_total = COP_H_total;
             lastCalculationData.Q_evap_W = Q_evap_W;
+            lastCalculationData.Q_evap_line_W = Q_evap_line_W;
             lastCalculationData.Q_cond_W = Q_cond_W;
             lastCalculationData.Q_oil_W = Q_oil_W;
             lastCalculationData.Q_heating_usable_W = Q_heating_usable_W;
             lastCalculationData.Q_total_rejected_W = Q_total_rejected_W;
             lastCalculationData.Q_cylinder_head_W = Q_cylinder_head_W;
+            lastCalculationData.useful_superheat_K = useful_superheat_K;
+            lastCalculationData.total_superheat_K = total_superheat_K;
+            lastCalculationData.line_superheat_K = line_superheat_K;
             lastCalculationData.waterCircuit = {
                 m_dot_water,
                 T_water_in,
@@ -2367,15 +2455,53 @@ export function initMode7(CP) {
             });
         }
         
-        // 过热度改变时，如果自动效率计算启用，触发效率更新
-        const superheatInputM7 = document.getElementById('superheat_m7');
-        if (superheatInputM7) {
-            superheatInputM7.addEventListener('change', () => {
+        // 过热分析：更新管道过热显示
+        const usefulSuperheatInputM7 = document.getElementById('useful_superheat_m7');
+        const totalSuperheatInputM7 = document.getElementById('superheat_m7');
+        const lineSuperheatDisplayM7 = document.getElementById('line_superheat_display_m7');
+        
+        function updateLineSuperheatDisplay() {
+            if (lineSuperheatDisplayM7 && usefulSuperheatInputM7 && totalSuperheatInputM7) {
+                const useful = parseFloat(usefulSuperheatInputM7.value) || 0;
+                const total = parseFloat(totalSuperheatInputM7.value) || 0;
+                const line = Math.max(0, total - useful);
+                lineSuperheatDisplayM7.textContent = line.toFixed(1);
+                
+                // 如果总过热小于有用过热，显示警告颜色
+                if (total < useful) {
+                    lineSuperheatDisplayM7.parentElement.classList.add('text-red-600');
+                    lineSuperheatDisplayM7.parentElement.classList.remove('text-gray-500');
+                } else {
+                    lineSuperheatDisplayM7.parentElement.classList.remove('text-red-600');
+                    lineSuperheatDisplayM7.parentElement.classList.add('text-gray-500');
+                }
+            }
+        }
+        
+        // 监听有用过热和总过热的变化，自动更新管道过热显示
+        if (usefulSuperheatInputM7) {
+            usefulSuperheatInputM7.addEventListener('input', updateLineSuperheatDisplay);
+            usefulSuperheatInputM7.addEventListener('change', () => {
+                updateLineSuperheatDisplay();
+                // 如果自动效率计算启用，触发效率更新（总过热用于效率计算）
                 if (autoEffCheckboxM7 && autoEffCheckboxM7.checked) {
                     updateAndDisplayEfficienciesM7();
                 }
             });
         }
+        if (totalSuperheatInputM7) {
+            totalSuperheatInputM7.addEventListener('input', updateLineSuperheatDisplay);
+            totalSuperheatInputM7.addEventListener('change', () => {
+                updateLineSuperheatDisplay();
+                // 如果自动效率计算启用，触发效率更新
+                if (autoEffCheckboxM7 && autoEffCheckboxM7.checked) {
+                    updateAndDisplayEfficienciesM7();
+                }
+            });
+        }
+        
+        // 初始化管道过热显示
+        updateLineSuperheatDisplay();
         
         // 如果自动效率计算已启用，初始化时触发一次计算
         if (autoEffCheckboxM7 && autoEffCheckboxM7.checked) {
