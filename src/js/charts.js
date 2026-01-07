@@ -802,9 +802,22 @@ export function drawSystemDiagramM7(domId, nodeData) {
     // 辅助函数：创建路径（箭头）
     const createArrow = (x1, y1, x2, y2, color, strokeWidth = 2) => {
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        
+        // 验证输入参数，避免NaN
+        if (isNaN(x1) || isNaN(y1) || isNaN(x2) || isNaN(y2)) {
+            console.warn(`[Charts] Invalid arrow coordinates: (${x1}, ${y1}) -> (${x2}, ${y2})`);
+            return path; // 返回空路径，不绘制
+        }
+        
         const dx = x2 - x1;
         const dy = y2 - y1;
         const len = Math.sqrt(dx * dx + dy * dy);
+        
+        // 如果长度为0或无效，不绘制箭头
+        if (len < 0.1 || !isFinite(len)) {
+            return path;
+        }
+        
         const unitX = dx / len;
         const unitY = dy / len;
         
@@ -818,7 +831,19 @@ export function drawSystemDiagramM7(domId, nodeData) {
         const perpX = -unitY;
         const perpY = unitX;
         
-        const pathData = `M ${x1} ${y1} L ${arrowX} ${arrowY} M ${x2} ${y2} L ${arrowX + perpX * arrowWidth} ${arrowY + perpY * arrowWidth} M ${x2} ${y2} L ${arrowX - perpX * arrowWidth} ${arrowY - perpY * arrowWidth}`;
+        // 验证计算结果，确保没有NaN
+        const arrowTip1X = arrowX + perpX * arrowWidth;
+        const arrowTip1Y = arrowY + perpY * arrowWidth;
+        const arrowTip2X = arrowX - perpX * arrowWidth;
+        const arrowTip2Y = arrowY - perpY * arrowWidth;
+        
+        if (isNaN(arrowX) || isNaN(arrowY) || isNaN(arrowTip1X) || isNaN(arrowTip1Y) || 
+            isNaN(arrowTip2X) || isNaN(arrowTip2Y)) {
+            console.warn(`[Charts] Invalid arrow calculation for (${x1}, ${y1}) -> (${x2}, ${y2})`);
+            return path;
+        }
+        
+        const pathData = `M ${x1} ${y1} L ${arrowX} ${arrowY} M ${x2} ${y2} L ${arrowTip1X} ${arrowTip1Y} M ${x2} ${y2} L ${arrowTip2X} ${arrowTip2Y}`;
         
         path.setAttribute('d', pathData);
         path.setAttribute('stroke', color);
@@ -1048,47 +1073,124 @@ export function drawSystemDiagramM7(domId, nodeData) {
         const waterLabel = createText(waterX, waterLabelY, '热水回路', 11, 'bold', waterColor);
         svg.appendChild(waterLabel);
 
-        // 热水流向（从下往上，与主循环对齐）
+        // 热水流向（修正后的顺序：过冷器与油冷却并联 -> 冷凝器 -> 降低过热器）
         const waterComponents = [];
         
-        // 过冷器热水侧
+        // 第一步：过冷器与油冷却器并联（热水从入口分流，然后汇合）
+        // 计算并联组件的Y位置（使用过冷器或冷凝器的位置作为参考）
+        const parallelY = positions.subcooler || positions.condenser;
+        
+        // 第一步：过冷器与油冷却器并联（热水从入口分流，然后汇合）
+        // 过冷器热水侧（如果启用）
         if (nodeData.isSubcoolerEnabled && positions.subcooler) {
             waterComponents.push({ 
                 y: positions.subcooler, 
                 label: '过冷器',
-                temps: nodeData.waterTemps?.subcooler
+                temps: nodeData.waterTemps?.subcooler,
+                isParallel: true
             });
         }
 
-        // 油冷器热水侧（如果有，放在过冷器和冷凝器之间）
+        // 油冷器热水侧（始终启用，与过冷器并联）
+        // 注意：油冷始终存在，无论过冷器是否启用
         if (nodeData.isOilCoolerEnabled) {
-            const oilY = positions.subcooler ? (positions.subcooler + positions.condenser) / 2 : positions.condenser;
+            // 如果过冷器启用，油冷器放在同一水平位置（并联显示）
+            // 如果过冷器未启用，油冷器单独显示在冷凝器上方
+            const oilY = positions.subcooler ? positions.subcooler : (positions.condenser - 30);
             waterComponents.push({ 
                 y: oilY, 
                 label: '油冷',
-                temps: nodeData.waterTemps?.oil_cooler
+                temps: nodeData.waterTemps?.oil_cooler,
+                isParallel: true
             });
         }
 
-        // 冷凝器热水侧
+        // 第二步：冷凝器热水侧（使用汇合后的热水）
         waterComponents.push({ 
             y: positions.condenser, 
             label: '冷凝器',
-            temps: nodeData.waterTemps?.condenser
+            temps: nodeData.waterTemps?.condenser,
+            isParallel: false
         });
 
-        // 降低过热器热水侧
+        // 第三步：降低过热器热水侧（使用冷凝器出口的热水）
         if (nodeData.isDesuperheaterEnabled && positions.desuperheater) {
             waterComponents.push({ 
                 y: positions.desuperheater, 
                 label: '降低过热器',
-                temps: nodeData.waterTemps?.desuperheater
+                temps: nodeData.waterTemps?.desuperheater,
+                isParallel: false
             });
         }
 
         // 绘制热水组件
-        waterComponents.forEach((comp, index) => {
-            const waterHe = createRect(waterX, comp.y, heWidth - 20, heHeight - 10, 'rgba(249, 115, 22, 0.2)', waterColor);
+        // 热水入口位置（底部，与制冷剂循环底部对齐）
+        const waterInletY = positions.evap + evapHeight/2 + 30;
+        
+        // 分离并联组件和串联组件
+        const parallelComponents = waterComponents.filter(c => c.isParallel);
+        const sequentialComponents = waterComponents.filter(c => !c.isParallel);
+        
+        // 第一步：绘制并联组件（过冷器和油冷却器）
+        let parallelOutletY = null;
+        if (parallelComponents.length > 0) {
+            // 计算并联组件的平均Y位置（用于汇合点）
+            const avgParallelY = parallelComponents.reduce((sum, c) => sum + c.y, 0) / parallelComponents.length;
+            parallelOutletY = avgParallelY + (heHeight - 10) / 2;
+            
+            // 绘制分流点（从入口分流）
+            const splitY = waterInletY;
+            const splitPoint = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            splitPoint.setAttribute('cx', waterX);
+            splitPoint.setAttribute('cy', splitY);
+            splitPoint.setAttribute('r', 4);
+            splitPoint.setAttribute('fill', waterColor);
+            svg.appendChild(splitPoint);
+            
+            parallelComponents.forEach((comp, pIndex) => {
+                // 绘制热水换热器（与制冷剂换热器在同一Y位置，在右侧显示）
+                // 如果是并联显示（过冷器和油冷在同一位置），需要错开X位置
+                const isParallelDisplay = parallelComponents.length > 1 && 
+                                         parallelComponents.every(c => c.y === comp.y);
+                const offsetX = isParallelDisplay ? (comp.label === '过冷器' ? -25 : 25) : 0;
+                
+                const waterHe = createRect(waterX + offsetX, comp.y, heWidth - 20, heHeight - 10, 'rgba(249, 115, 22, 0.15)', waterColor);
+                svg.appendChild(waterHe);
+                const waterLabelText = createText(waterX + offsetX, comp.y - 8, comp.label, 8, 'normal', waterColor);
+                svg.appendChild(waterLabelText);
+                
+                // 标注热水节点温度
+                if (comp.temps) {
+                    const tempText = createText(waterX + offsetX, comp.y + 5, `${comp.temps.inlet.toFixed(1)}→${comp.temps.outlet.toFixed(1)}°C`, 7, 'normal', waterColor);
+                    tempText.setAttribute('text-anchor', 'middle');
+                    svg.appendChild(tempText);
+                }
+                
+                // 绘制从分流点到并联组件的箭头
+                const arrowIn = createArrow(waterX, splitY, waterX + offsetX, comp.y - (heHeight - 10)/2, waterColor);
+                svg.appendChild(arrowIn);
+                
+                // 绘制从并联组件到汇合点的箭头
+                const arrowOut = createArrow(waterX + offsetX, comp.y + (heHeight - 10)/2, waterX, parallelOutletY, waterColor);
+                svg.appendChild(arrowOut);
+            });
+            
+            // 绘制汇合点
+            const mergePoint = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            mergePoint.setAttribute('cx', waterX);
+            mergePoint.setAttribute('cy', parallelOutletY);
+            mergePoint.setAttribute('r', 4);
+            mergePoint.setAttribute('fill', waterColor);
+            svg.appendChild(mergePoint);
+        }
+        
+        // 第二步：绘制串联组件（冷凝器和降低过热器）
+        let lastSequentialY = parallelOutletY || waterInletY;
+        
+        sequentialComponents.forEach((comp, sIndex) => {
+            // 绘制热水换热器（与制冷剂换热器在同一Y位置，在右侧显示）
+            // 注意：这里热水路径与制冷剂路径在同一个换热器位置重叠，这是正常的
+            const waterHe = createRect(waterX, comp.y, heWidth - 20, heHeight - 10, 'rgba(249, 115, 22, 0.15)', waterColor);
             svg.appendChild(waterHe);
             const waterLabelText = createText(waterX, comp.y - 8, comp.label, 8, 'normal', waterColor);
             svg.appendChild(waterLabelText);
@@ -1098,21 +1200,34 @@ export function drawSystemDiagramM7(domId, nodeData) {
                 const tempText = createText(waterX, comp.y + 5, `${comp.temps.inlet.toFixed(1)}→${comp.temps.outlet.toFixed(1)}°C`, 8, 'normal', waterColor);
                 tempText.setAttribute('text-anchor', 'middle');
                 svg.appendChild(tempText);
-                
-                // 标注流量（如果有多个组件，只在第一个显示）
-                if (index === 0 && comp.temps.flow) {
-                    const flowText = createText(waterX, comp.y + 15, `${(comp.temps.flow * 3600 / 1000).toFixed(2)} m³/h`, 7, 'normal', waterColor);
-                    flowText.setAttribute('text-anchor', 'middle');
-                    svg.appendChild(flowText);
-                }
             }
             
-            // 绘制箭头（从下往上）
-            if (index < waterComponents.length - 1) {
-                const arrow = createArrow(waterX, comp.y + (heHeight - 10)/2, waterX, waterComponents[index + 1].y - (heHeight - 10)/2, waterColor);
-                svg.appendChild(arrow);
-            }
+            // 绘制从上一个组件到当前组件的箭头
+            const arrow = createArrow(waterX, lastSequentialY, waterX, comp.y - (heHeight - 10)/2, waterColor);
+            svg.appendChild(arrow);
+            
+            // 更新最后位置
+            lastSequentialY = comp.y + (heHeight - 10)/2;
         });
+        
+        // 第三步：绘制从最后一个串联组件到出口的箭头
+        if (sequentialComponents.length > 0) {
+            const arrowOut = createArrow(waterX, lastSequentialY, waterX, waterInletY, waterColor);
+            svg.appendChild(arrowOut);
+        } else if (parallelComponents.length > 0) {
+            // 如果没有串联组件，从汇合点直接到出口
+            const arrowOut = createArrow(waterX, parallelOutletY, waterX, waterInletY, waterColor);
+            svg.appendChild(arrowOut);
+        }
+        
+        // 标注热水入口和出口
+        const inletLabel = createText(waterX, waterInletY + 15, '入口', 8, 'normal', waterColor);
+        inletLabel.setAttribute('text-anchor', 'middle');
+        svg.appendChild(inletLabel);
+        
+        const outletLabel = createText(waterX, waterInletY - 5, '出口', 8, 'normal', waterColor);
+        outletLabel.setAttribute('text-anchor', 'middle');
+        svg.appendChild(outletLabel);
     }
 
     // 绘制图例（放在底部）

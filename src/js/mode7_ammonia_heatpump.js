@@ -1123,9 +1123,24 @@ function calculateMode7() {
             const series = compressorSeriesM7?.value;
             const seriesLimits = getDischargeTempLimits(brand, series);
             
-            // 使用更严格的限制（取两者中的较小值）
-            const effectiveWarning = Math.min(fluidLimits.warn, seriesLimits?.warning || fluidLimits.warn);
-            const effectiveMax = Math.min(fluidLimits.max, seriesLimits?.trip || fluidLimits.max);
+            // RCC Pro: 对于热泵系列（V HP/XHP），优先使用系列限制（设计用于更高温度）
+            // 对于标准系列（V），使用更严格的限制（取两者中的较小值）
+            const isHeatPumpSeries = series && (
+                series.includes('HP') || series.includes('XHP')
+            );
+            
+            let effectiveWarning, effectiveMax;
+            if (isHeatPumpSeries && seriesLimits) {
+                // 热泵系列：优先使用系列限制（设计用于更高温度工况）
+                effectiveWarning = seriesLimits.warning;
+                effectiveMax = seriesLimits.trip;
+                console.log(`[RCC Pro] 使用热泵系列温度限制: 警告=${effectiveWarning}°C, 最大=${effectiveMax}°C`);
+            } else {
+                // 标准系列：使用更严格的限制（取两者中的较小值）
+                effectiveWarning = Math.min(fluidLimits.warn, seriesLimits?.warning || fluidLimits.warn);
+                effectiveMax = Math.min(fluidLimits.max, seriesLimits?.trip || fluidLimits.max);
+                console.log(`[RCC Pro] 使用标准系列温度限制: 警告=${effectiveWarning}°C, 最大=${effectiveMax}°C`);
+            }
             
             // 检查排气温度限制（使用修正后的温度）
             if (T_discharge_actual_C > effectiveMax) {
@@ -1188,9 +1203,7 @@ function calculateMode7() {
             // 注意：T_2a_after_head_cooling_C 已在前面声明（第987行）
             let h_2a_after_head_cooling = h_2a_final;
             
-            // #region agent log - Energy Balance Debug
-            fetch('http://127.0.0.1:7249/ingest/713cb4f4-2156-4dcf-89d7-fdd2800f25d2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mode7_ammonia_heatpump.js:1095',message:'Before head cooling calc',data:{h_2a_final,h_2a_final_kj: h_2a_final/1000,Q_cylinder_head_W,m_dot_suc,isCylinderHeadCoolingEnabled,cylinderHeadCoolingError},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-            // #endregion
+            // 调试日志已移除（避免控制台错误）
             
             if (isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError && Q_cylinder_head_W > 0) {
                 // =========================================================
@@ -1209,8 +1222,7 @@ function calculateMode7() {
                 const h_diff_from_energy = h_2a_final - h_2a_after_head_cooling;
                 const h_diff_expected = Q_cylinder_head_W / m_dot_suc;
                 const temp_reduction_actual = T_2a_final_C - T_2a_after_head_cooling_C;
-                fetch('http://127.0.0.1:7249/ingest/713cb4f4-2156-4dcf-89d7-fdd2800f25d2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mode7_ammonia_heatpump.js:1103',message:'After head cooling calc (FIXED)',data:{h_2a_after_head_cooling,h_2a_after_head_cooling_kj: h_2a_after_head_cooling/1000,h_diff_from_energy_kj: h_diff_from_energy/1000,h_diff_expected_kj: h_diff_expected/1000,T_2a_after_head_cooling_C,temp_reduction_actual,Q_cylinder_head_W,Q_cylinder_head_per_kg: Q_cylinder_head_W/m_dot_suc,m_dot_suc},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'A'})}).catch(()=>{});
-                // #endregion
+                // 调试日志已移除（避免控制台错误）
             } else {
                 // 未启用或安全检查失败，使用原始排气状态
                 h_2a_after_head_cooling = h_2a_final;
@@ -1264,9 +1276,7 @@ function calculateMode7() {
                                  (isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError ? h_2a_after_head_cooling : h_2a_final);
                 Q_cond_W = m_dot_suc * (h_cond_in - h_3);
                 
-                // #region agent log - Energy Balance Debug
-                fetch('http://127.0.0.1:7249/ingest/713cb4f4-2156-4dcf-89d7-fdd2800f25d2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mode7_ammonia_heatpump.js:1156',message:'Condenser calc',data:{h_cond_in,h_cond_in_kj: h_cond_in/1000,h_2a_final_kj: h_2a_final/1000,h_2a_after_head_cooling_kj: h_2a_after_head_cooling/1000,h_3_kj: h_3/1000,Q_cond_W,Q_cond_kW: Q_cond_W/1000,isDesuperheaterEnabled,isCylinderHeadCoolingEnabled},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-                // #endregion
+                // 调试日志已移除（避免控制台错误）
             } else {
                 Q_cond_W = 0;
             }
@@ -1290,9 +1300,7 @@ function calculateMode7() {
             // 油冷始终启用，因为摩擦热总是存在（由油泵决定，不是用户选择）
             Q_oil_cooler_W = Q_oil_W; // 始终等于摩擦热，因为油冷始终启用
             
-            // #region agent log - Energy Balance Debug
-            fetch('http://127.0.0.1:7249/ingest/713cb4f4-2156-4dcf-89d7-fdd2800f25d2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mode7_ammonia_heatpump.js:1178',message:'Friction heat check',data:{Q_oil_W,Q_oil_kW: Q_oil_W/1000,Q_oil_cooler_W,Q_oil_cooler_kW: Q_oil_cooler_W/1000,W_shaft_W,W_shaft_kW: W_shaft_W/1000,friction_percent: (Q_oil_W/W_shaft_W)*100},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-            // #endregion
+            // 调试日志已移除（避免控制台错误）
             
             // Calculate total heat transfer
             const Q_total_W = Q_subcooler_W + Q_oil_cooler_W + Q_cond_W + Q_desuperheater_W;
@@ -1307,153 +1315,167 @@ function calculateMode7() {
                 console.warn('Water outlet temperature must be higher than inlet temperature for heat transfer.');
             }
             
-            // Calculate water temperatures through each heat exchanger (in order)
-            // Primary calculation: based on heat transfer and flow rate
-            // Approach temperature: used as constraint, not for direct calculation
-            let T_water_current = T_water_in;
+            // =========================================================
+            // 热水流程计算（修正后的顺序）
+            // 流程：过冷器与油冷却（并联）-> 冷凝器 -> 降低过热器
+            // =========================================================
+            // 根据流程图，热水流程与制冷剂流程重叠：
+            // - 制冷剂：压缩机 -> 降低过热器 -> 冷凝器 -> 过冷器 -> 节流阀 -> 蒸发器
+            // - 热水：过冷器与油冷却（并联）-> 冷凝器 -> 降低过热器
+            // =========================================================
+            
             const waterTemps = {};
             const approachWarnings = []; // Collect warnings for display
             
-            // Determine the last enabled heat exchanger
-            // 注意：油冷始终启用，所以不需要检查 isOilCoolerEnabled
-            const lastHE = isDesuperheaterEnabled ? 'desuperheater' : 
-                          (isCondenserEnabled ? 'condenser' : 
-                          (isSubcoolerEnabled ? 'subcooler' : 'oil_cooler')); // 油冷始终存在
+            // 第一步：过冷器与油冷却器并联（热水从入口分流，然后汇合）
+            // 假设热水流量平均分配（如果两个都启用）
+            let T_water_after_parallel = T_water_in;
+            let Q_parallel_total_W = 0;
             
-            // 1. Subcooler (过冷器) - 顺序1
+            // 1a. 过冷器（如果启用）
             if (isSubcoolerEnabled && Q_subcooler_W > 0) {
-                // 主要计算：根据换热量和流量计算热水出口温度
-                let T_water_out_subcooler = T_water_current;
-                if (m_dot_water > 0) {
-                    const deltaT_subcooler = Q_subcooler_W / (m_dot_water * c_p_water);
-                    T_water_out_subcooler = T_water_current + deltaT_subcooler;
+                // 计算过冷器需要的流量（假设平均分配，或根据换热量比例分配）
+                // 简化处理：假设总流量平均分配到启用的并联换热器
+                const num_parallel = (isSubcoolerEnabled ? 1 : 0) + (Q_oil_cooler_W > 0 ? 1 : 0);
+                const m_dot_subcooler = num_parallel > 0 ? m_dot_water / num_parallel : m_dot_water;
+                
+                let T_water_out_subcooler = T_water_in;
+                if (m_dot_subcooler > 0) {
+                    const deltaT_subcooler = Q_subcooler_W / (m_dot_subcooler * c_p_water);
+                    T_water_out_subcooler = T_water_in + deltaT_subcooler;
                 }
                 
                 // 验证逼近温差约束
                 const T_refrigerant_out_subcooler = CP_INSTANCE.PropsSI('T', 'P', Pc_Pa, 'H', h_3_final, fluid) - 273.15;
-                const actual_approach = T_refrigerant_out_subcooler - T_water_current;
+                const actual_approach = T_refrigerant_out_subcooler - T_water_in;
                 const max_water_inlet = T_refrigerant_out_subcooler - approach_subcooler;
                 
-                if (T_water_current > max_water_inlet || actual_approach < approach_subcooler) {
+                if (T_water_in > max_water_inlet || actual_approach < approach_subcooler) {
                     approachWarnings.push(`过冷器: 实际逼近温差(${actual_approach.toFixed(1)}K) 小于设定值(${approach_subcooler.toFixed(1)}K)`);
                 }
                 
                 waterTemps.subcooler = {
-                    inlet: T_water_current,
+                    inlet: T_water_in,
                     outlet: T_water_out_subcooler,
                     Q_kW: Q_subcooler_W / 1000,
                     approach: approach_subcooler,
-                    approachSatisfied: T_water_current <= max_water_inlet
+                    approachSatisfied: T_water_in <= max_water_inlet
                 };
-                T_water_current = T_water_out_subcooler;
+                
+                Q_parallel_total_W += Q_subcooler_W;
             } else if (isSubcoolerEnabled) {
                 waterTemps.subcooler = {
-                    inlet: T_water_current,
-                    outlet: T_water_current,
+                    inlet: T_water_in,
+                    outlet: T_water_in,
                     Q_kW: Q_subcooler_W / 1000,
                     approach: approach_subcooler,
                     approachSatisfied: true
                 };
             }
             
-            // 2. Lubrication Oil Cooler (润滑系统油冷) - 顺序2
-            // 注意：这是润滑系统的油冷却，仅带走摩擦热，不用于冷却压缩气体
-            // 油冷始终启用（摩擦热总是存在）
+            // 1b. 油冷却器（始终启用）
             if (Q_oil_cooler_W > 0) {
-                // 主要计算：根据换热量和流量计算热水出口温度
-                let T_water_out_oil = T_water_current;
-                if (m_dot_water > 0) {
-                    const deltaT_oil = Q_oil_cooler_W / (m_dot_water * c_p_water);
-                    T_water_out_oil = T_water_current + deltaT_oil;
+                // 计算油冷却器需要的流量（假设平均分配）
+                const num_parallel = (isSubcoolerEnabled ? 1 : 0) + 1;
+                const m_dot_oil = num_parallel > 0 ? m_dot_water / num_parallel : m_dot_water;
+                
+                let T_water_out_oil = T_water_in;
+                if (m_dot_oil > 0) {
+                    const deltaT_oil = Q_oil_cooler_W / (m_dot_oil * c_p_water);
+                    T_water_out_oil = T_water_in + deltaT_oil;
                 }
                 
                 // 验证逼近温差约束
                 const T_oil_out_est = T_2a_final_C - 20; // 估算油出口温度
-                const actual_approach = T_oil_out_est - T_water_current;
+                const actual_approach = T_oil_out_est - T_water_in;
                 const max_water_inlet = T_oil_out_est - approach_oil_cooler;
                 
-                if (T_water_current > max_water_inlet || actual_approach < approach_oil_cooler) {
+                if (T_water_in > max_water_inlet || actual_approach < approach_oil_cooler) {
                     approachWarnings.push(`润滑系统油冷: 实际逼近温差(${actual_approach.toFixed(1)}K) 小于设定值(${approach_oil_cooler.toFixed(1)}K)`);
                 }
                 
                 waterTemps.oil_cooler = {
-                    inlet: T_water_current,
+                    inlet: T_water_in,
                     outlet: T_water_out_oil,
                     Q_kW: Q_oil_cooler_W / 1000,
                     approach: approach_oil_cooler,
-                    approachSatisfied: T_water_current <= max_water_inlet
+                    approachSatisfied: T_water_in <= max_water_inlet
                 };
-                T_water_current = T_water_out_oil;
+                
+                Q_parallel_total_W += Q_oil_cooler_W;
             } else {
                 // 即使换热量为0，也记录油冷器状态（始终存在）
                 waterTemps.oil_cooler = {
-                    inlet: T_water_current,
-                    outlet: T_water_current,
+                    inlet: T_water_in,
+                    outlet: T_water_in,
                     Q_kW: Q_oil_cooler_W / 1000,
                     approach: approach_oil_cooler,
                     approachSatisfied: true
                 };
             }
             
-            // 3. Condenser (冷凝器) - 顺序3
+            // 1c. 计算并联汇合后的热水温度（能量平衡）
+            // 汇合温度 = (m1*T1 + m2*T2) / (m1 + m2)，简化后如果流量相等，则为平均温度
+            if (m_dot_water > 0 && Q_parallel_total_W > 0) {
+                // 根据总换热量计算汇合后的温度
+                const deltaT_parallel = Q_parallel_total_W / (m_dot_water * c_p_water);
+                T_water_after_parallel = T_water_in + deltaT_parallel;
+            }
+            
+            // 第二步：冷凝器（使用汇合后的热水作为入口）
+            let T_water_after_condenser = T_water_after_parallel;
             if (isCondenserEnabled && Q_cond_W > 0) {
-                let T_water_out_cond;
-                
-                // 如果冷凝器是最后一个启用的换热器，其出水温度 = 用户输入的总出水温度
-                if (lastHE === 'condenser') {
-                    T_water_out_cond = T_water_out;
+                // 如果冷凝器是最后一个启用的换热器（没有降低过热器），其出水温度 = 用户输入的总出水温度
+                if (!isDesuperheaterEnabled) {
+                    T_water_after_condenser = T_water_out;
                 } else {
                     // 主要计算：根据换热量和流量计算热水出口温度
                     if (m_dot_water > 0) {
                         const deltaT_cond = Q_cond_W / (m_dot_water * c_p_water);
-                        T_water_out_cond = T_water_current + deltaT_cond;
-                    } else {
-                        T_water_out_cond = T_water_current;
+                        T_water_after_condenser = T_water_after_parallel + deltaT_cond;
                     }
                 }
                 
                 // 验证逼近温差约束
                 // 对于冷凝器，逼近温差 = 冷凝温度 - 热水出口温度
                 // 因为最小温差出现在热水出口端（逆流换热）
-                const actual_approach = Tc_C - T_water_out_cond;
+                const actual_approach = Tc_C - T_water_after_condenser;
                 const max_water_outlet = Tc_C - approach_condenser;
                 
                 // 检查：实际逼近温差是否小于设定值
                 if (actual_approach < approach_condenser) {
-                    approachWarnings.push(`冷凝器: 实际逼近温差(${actual_approach.toFixed(1)}K) 小于设定值(${approach_condenser.toFixed(1)}K)，热水出口温度(${T_water_out_cond.toFixed(1)}°C) 过高`);
+                    approachWarnings.push(`冷凝器: 实际逼近温差(${actual_approach.toFixed(1)}K) 小于设定值(${approach_condenser.toFixed(1)}K)，热水出口温度(${T_water_after_condenser.toFixed(1)}°C) 过高`);
                 }
                 
                 waterTemps.condenser = {
-                    inlet: T_water_current,
-                    outlet: T_water_out_cond,
+                    inlet: T_water_after_parallel,
+                    outlet: T_water_after_condenser,
                     Q_kW: Q_cond_W / 1000,
                     approach: approach_condenser,
                     approachSatisfied: actual_approach >= approach_condenser
                 };
-                T_water_current = T_water_out_cond;
             }
             
-            // 4. Desuperheater (降低过热器) - 顺序4
+            // 第三步：降低过热器（使用冷凝器出口的热水作为入口）
             if (isDesuperheaterEnabled && Q_desuperheater_W > 0) {
                 // 降低过热器是最后一个，其出水温度 = 用户输入的总出水温度
                 const T_water_out_desuper = T_water_out;
                 
                 // 验证逼近温差约束
-                const actual_approach = T_2a_after_desuper_C - T_water_current;
+                const actual_approach = T_2a_after_desuper_C - T_water_after_condenser;
                 const max_water_inlet = T_2a_after_desuper_C - approach_desuperheater;
                 
-                if (T_water_current > max_water_inlet || actual_approach < approach_desuperheater) {
+                if (T_water_after_condenser > max_water_inlet || actual_approach < approach_desuperheater) {
                     approachWarnings.push(`降低过热器: 实际逼近温差(${actual_approach.toFixed(1)}K) 小于设定值(${approach_desuperheater.toFixed(1)}K)`);
                 }
                 
                 waterTemps.desuperheater = {
-                    inlet: T_water_current,
+                    inlet: T_water_after_condenser,
                     outlet: T_water_out_desuper,
                     Q_kW: Q_desuperheater_W / 1000,
                     approach: approach_desuperheater,
-                    approachSatisfied: T_water_current <= max_water_inlet
+                    approachSatisfied: T_water_after_condenser <= max_water_inlet
                 };
-                T_water_current = T_water_out_desuper;
             }
             
             // Update h_liq_out if subcooler is enabled
@@ -1466,9 +1488,7 @@ function calculateMode7() {
                 // 管道过热吸收的热量不变（与过冷器无关）
             }
             
-            // #region agent log - Energy Balance Debug
-            fetch('http://127.0.0.1:7249/ingest/713cb4f4-2156-4dcf-89d7-fdd2800f25d2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mode7_ammonia_heatpump.js:1348',message:'Evaporator calc',data:{Q_evap_W,Q_evap_kW: Q_evap_W/1000,h_1_kj: h_1/1000,h_liq_out_final_kj: h_liq_out_final/1000,m_dot_suc,isSubcoolerEnabled,isCylinderHeadCoolingEnabled,Q_cylinder_head_W},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-            // #endregion
+            // 调试日志已移除（避免控制台错误）
             
             // =========================================================
             // 总排热计算（用于能量守恒验证）
@@ -1491,8 +1511,7 @@ function calculateMode7() {
             const energy_balance_lhs = W_shaft_W + Q_evap_W;
             const energy_balance_rhs = Q_total_rejected_W;
             const energy_balance_diff = energy_balance_lhs - energy_balance_rhs;
-            fetch('http://127.0.0.1:7249/ingest/713cb4f4-2156-4dcf-89d7-fdd2800f25d2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'mode7_ammonia_heatpump.js:1352',message:'Energy balance check',data:{W_shaft_W,W_shaft_kW: W_shaft_W/1000,Q_evap_W,Q_evap_kW: Q_evap_W/1000,Q_cond_W,Q_cond_kW: Q_cond_W/1000,Q_oil_cooler_W,Q_oil_cooler_kW: Q_oil_cooler_W/1000,Q_subcooler_W,Q_subcooler_kW: Q_subcooler_W/1000,Q_desuperheater_W,Q_desuperheater_kW: Q_desuperheater_W/1000,Q_cylinder_head_W,Q_cylinder_head_kW: Q_cylinder_head_W/1000,Q_heating_usable_W,Q_heating_usable_kW: Q_heating_usable_W/1000,Q_total_rejected_W,Q_total_rejected_kW: Q_total_rejected_W/1000,energy_balance_lhs,energy_balance_lhs_kW: energy_balance_lhs/1000,energy_balance_rhs,energy_balance_rhs_kW: energy_balance_rhs/1000,energy_balance_diff,energy_balance_diff_kW: energy_balance_diff/1000},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-            // #endregion
+            // 调试日志已移除（避免控制台错误）
 
             // COP 计算使用轴功率
             // 修复：防止除以零导致 -Infinity

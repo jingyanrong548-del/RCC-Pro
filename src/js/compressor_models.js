@@ -268,11 +268,16 @@ export function getModelDetail(brand, series, model) {
  * 根据制冷剂类型的排气温度限制配置
  * 根据 GEA 服务手册和工程实践定义
  * 这是主要限制，基于制冷剂物性（润滑油分解温度）
+ * 
+ * 注意：对于热泵应用（V HP/XHP系列），由于设计用于更高温度工况，
+ * 实际限制应该参考压缩机系列限制（DISCHARGE_TEMP_LIMITS）
  */
 export const DISCHARGE_TEMP_LIMITS_BY_REFRIGERANT = {
     'R717': {  // 氨 (Ammonia)
-        warn: 140,  // °C
-        max: 155     // °C (绝对限制，超过此温度需要喷液或两级压缩)
+        // 标准制冷工况限制（用于V系列标准型号）
+        warn: 140,  // °C - 标准制冷工况警告温度
+        max: 155     // °C - 标准制冷工况绝对限制（超过此温度需要喷液或两级压缩）
+        // 注意：对于热泵工况（V HP/XHP系列），应使用系列限制，通常更高
     },
     'R744': {  // CO2
         warn: 130,  // °C
@@ -283,27 +288,37 @@ export const DISCHARGE_TEMP_LIMITS_BY_REFRIGERANT = {
 /**
  * 压缩机系列排气温度限制配置（作为补充，基于硬件设计）
  * 根据 GEA 服务手册和工程实践定义
+ * 
+ * 重要说明：
+ * - 对于热泵应用（V HP/XHP系列），这些限制优先于制冷剂限制
+ * - 标准制冷工况（V系列）应同时考虑制冷剂限制和系列限制，取较小值
+ * - 热泵工况下，压缩机设计用于更高温度，系列限制通常更宽松
  */
 export const DISCHARGE_TEMP_LIMITS = {
-    // Standard V Series (NH3) - 标准氨系列
+    // Standard V Series (NH3) - 标准氨系列 (25 bar)
+    // 用于标准制冷工况，温度限制较保守
     'Grasso V (25 bar)': {
-        warning: 140,  // °C
-        trip: 150      // °C
+        warning: 140,  // °C - 标准氨制冷工况警告温度
+        trip: 150      // °C - 标准氨制冷工况跳闸温度
     },
-    // V HP Series (Heat Pump) - 热泵系列
-    'Grasso V HP (40 bar)': {
-        warning: 150,  // °C
-        trip: 160      // °C
+    // V HP Series (Heat Pump) - 热泵系列 (39 bar)
+    // 注意：系列名称必须与COMPRESSOR_MODELS中的完全一致
+    // 根据GEA资料，V HP系列设计用于热泵应用，可承受更高排气温度
+    'Grasso V HP (39 bar Heat Pump)': {
+        warning: 150,  // °C - 热泵工况警告温度（根据GEA技术资料，V HP系列设计用于更高温度工况）
+        trip: 160      // °C - 热泵工况跳闸温度（绝对限制，超过此温度存在严重风险）
     },
-    // V XHP Series (High Temp) - 高温系列
+    // V XHP Series (High Temp) - 高温系列 (63 bar)
+    // 根据GEA资料，XHP系列最高供水温度可达95°C，对应排气温度更高
     'Grasso V XHP (63 bar High Temp)': {
-        warning: 160,  // °C
-        trip: 170      // °C (绝对机械限制，根据 GEA 服务手册)
+        warning: 160,  // °C - 高温工况警告温度（根据GEA资料，XHP系列设计用于最高温度工况）
+        trip: 170      // °C - 高温工况跳闸温度（绝对机械限制，根据 GEA 服务手册）
     },
-    // 5HP Series (CO2) - CO2 系列
+    // 5HP Series (CO2) - CO2 系列 (50 bar)
+    // CO2工况下温度限制较低
     'Grasso 5HP (50 bar)': {
-        warning: 130,  // °C
-        trip: 140      // °C
+        warning: 130,  // °C - CO2工况警告温度
+        trip: 140      // °C - CO2工况跳闸温度
     }
 };
 

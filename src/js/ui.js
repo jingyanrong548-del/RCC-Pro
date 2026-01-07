@@ -171,9 +171,9 @@ export function initUI() {
             }
         });
 
-        // 如果切换到制冷热泵模式，默认显示第一个子模式（单级）
+        // 如果切换到制冷热泵模式，默认显示氨热泵模块（M7）
         if (mainIdx === 0) {
-            switchSubTab(0);
+            switchSubTab(4, true); // 直接切换到M7，不显示alert
         }
         // 如果切换到气体压缩模式，隐藏子导航（正在编制中）
         if (mainIdx === 1) {
@@ -195,8 +195,18 @@ export function initUI() {
     }
 
     // 子标签切换函数
-    function switchSubTab(subIdx) {
+    function switchSubTab(subIdx, suppressAlert = false) {
         console.log(`[UI] Switching to sub-tab index: ${subIdx}`);
+        
+        // 暂时只开通氨热泵模块（M7，索引4），其他模块显示维护中
+        if (subIdx !== 4) {
+            // 只在用户主动点击时显示提示，初始化时不显示
+            if (!suppressAlert) {
+                alert(i18next.t('nav.maintenance'));
+            }
+            // 如果尝试切换到维护中的模块，自动切换到M7
+            subIdx = 4;
+        }
         
         // 确保父容器 tab-content-refrig 是可见的
         const refrigContainer = document.getElementById('tab-content-refrig');
@@ -368,9 +378,26 @@ export function initUI() {
     });
 
     // 子标签事件监听
+    // 暂时只开通氨热泵模块（M7），其他模块显示维护中
     subTabs.forEach((t, i) => {
         const btn = document.getElementById(t.btnId);
-        if (btn) btn.addEventListener('click', () => switchSubTab(i));
+        if (btn) {
+            // M7是最后一个（索引4），只有它可用
+            if (t.btnId === 'sub-tab-btn-m7') {
+                btn.addEventListener('click', () => switchSubTab(i));
+            } else {
+                // 其他模块禁用并显示维护中
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    alert(i18next.t('nav.maintenance'));
+                });
+                btn.classList.add('opacity-50', 'cursor-not-allowed');
+                // 在按钮上添加维护中提示
+                const originalText = btn.textContent;
+                btn.setAttribute('title', i18next.t('nav.maintenance'));
+            }
+        }
     });
 
     // 气体压缩子标签切换函数
@@ -458,7 +485,9 @@ export function initUI() {
 
         // 如果是制冷热泵模式，切换到对应的子标签
         if (navInfo.mainIdx === 0 && navInfo.subIdx !== null) {
-            setTimeout(() => switchSubTab(navInfo.subIdx), 50);
+            // 如果历史记录是维护中的模块，直接切换到M7，不显示alert
+            const targetSubIdx = (navInfo.subIdx !== 4) ? 4 : navInfo.subIdx;
+            setTimeout(() => switchSubTab(targetSubIdx, true), 50);
         }
         // 如果是气体压缩模式，切换到对应的子标签
         if (navInfo.mainIdx === 1 && navInfo.subIdx !== null) {
@@ -895,10 +924,11 @@ export function initUI() {
         btn.addEventListener('mouseleave', () => btn.classList.remove('scale-[0.98]'));
     });
 
-    // 初始化默认状态：显示制冷热泵模式的第一个子模式（单级）
+    // 初始化默认状态：显示制冷热泵模式的氨热泵模块（M7）
     // 首先调用切换函数确保状态一致
     switchMainTab(0);
-    switchSubTab(0);
+    // 切换到M7模块（索引4），初始化时不显示alert
+    switchSubTab(4, true);
     
     // 初始化气体压缩子标签：默认显示单级（但此时内容应该是隐藏的）
     // 注意：switchGasSubTab会显示tab-content-gas，所以需要在调用后再次隐藏

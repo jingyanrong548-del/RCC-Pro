@@ -27,7 +27,8 @@
     "twoStageDouble": "Two-Stage Double",
     "ammoniaHeatpump": "Ammonia Heat Pump",
     "twoStage": "Two Stage",
-    "underDevelopment": "Under Development"
+    "underDevelopment": "Under Development",
+    "maintenance": "Under Maintenance"
   },
   "mode2": {
     "title": "Single Stage Refrigeration",
