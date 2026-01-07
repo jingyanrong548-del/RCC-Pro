@@ -2680,19 +2680,19 @@
                             <div class="grid grid-cols-2 gap-4">
                                 <div>
                                     <label class="block text-xs text-gray-500 mb-1 ml-1">蒸发 Te (°C)</label>
-                                    <input type="number" id="temp_evap_m7" value="32" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
+                                    <input type="number" id="temp_evap_m7" value="35" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
                                 </div>
                                 <div>
                                     <label class="block text-xs text-gray-500 mb-1 ml-1">冷凝 Tc (°C)</label>
-                                    <input type="number" id="temp_cond_m7" value="73" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
+                                    <input type="number" id="temp_cond_m7" value="80" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
                                 </div>
                                 <div>
                                     <label class="block text-xs text-gray-500 mb-1 ml-1">过热度 (K)</label>
-                                    <input type="number" id="superheat_m7" value="1" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
+                                    <input type="number" id="superheat_m7" value="0" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
                                 </div>
                                 <div>
                                     <label class="block text-xs text-gray-500 mb-1 ml-1">过冷度 (K)</label>
-                                    <input type="number" id="subcooling_m7" value="1" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
+                                    <input type="number" id="subcooling_m7" value="0" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
                                 </div>
                             </div>
                         </div>
@@ -2718,11 +2718,11 @@
                             <div class="grid grid-cols-2 gap-4 mb-4">
                                 <div>
                                     <label id="eta_s_label_m7" class="block text-xs text-gray-500 mb-1 ml-1">总等熵效率</label>
-                                    <input type="number" id="eta_s_m7" value="0.7499" step="any" class="glass-input block w-full rounded-xl py-2 px-3 text-gray-900 font-medium">
+                                    <input type="number" id="eta_s_m7" value="0.799" step="any" class="glass-input block w-full rounded-xl py-2 px-3 text-gray-900 font-medium">
                                 </div>
                                 <div>
                                     <label class="block text-xs text-gray-500 mb-1 ml-1">容积效率 η_v</label>
-                                    <input type="number" id="eta_v_m7" value="0.9156" step="any" class="glass-input block w-full rounded-xl py-2 px-3 text-gray-900 font-medium">
+                                    <input type="number" id="eta_v_m7" value="0.9558" step="any" class="glass-input block w-full rounded-xl py-2 px-3 text-gray-900 font-medium">
                                 </div>
                             </div>
 
@@ -2747,11 +2747,11 @@
                                 <div class="grid grid-cols-2 gap-4 mb-3">
                                     <div>
                                         <label class="block text-xs text-gray-500 mb-1 ml-1">热水回水温度 (°C)</label>
-                                        <input type="number" id="water_inlet_temp_m7" value="50" step="0.1" class="glass-input block w-full rounded-xl py-2 px-3 text-gray-900 font-medium">
+                                        <input type="number" id="water_inlet_temp_m7" value="57" step="0.1" class="glass-input block w-full rounded-xl py-2 px-3 text-gray-900 font-medium">
                                     </div>
                                     <div>
                                         <label class="block text-xs text-gray-500 mb-1 ml-1">热水出水温度 (°C)</label>
-                                        <input type="number" id="water_outlet_temp_m7" value="70" step="0.1" class="glass-input block w-full rounded-xl py-2 px-3 text-gray-900 font-medium">
+                                        <input type="number" id="water_outlet_temp_m7" value="77" step="0.1" class="glass-input block w-full rounded-xl py-2 px-3 text-gray-900 font-medium">
                                     </div>
                                 </div>
                                 <div class="bg-white/60 rounded-lg p-2">
@@ -2861,7 +2861,7 @@
                                         </div>
                                         <div>
                                             <label class="block text-[10px] text-gray-500 mb-1">目标排气温度 (°C)</label>
-                                            <input type="number" id="desuperheater_target_temp_m7" value="75" step="0.1" class="glass-input block w-full rounded-lg py-1.5 px-2 text-xs text-gray-900 font-medium">
+                                            <input type="number" id="desuperheater_target_temp_m7" value="82" step="0.1" class="glass-input block w-full rounded-lg py-1.5 px-2 text-xs text-gray-900 font-medium">
                                             <p class="text-[9px] text-gray-400 mt-0.5">默认: 冷凝温度 + 2°C（自动调整）</p>
                                         </div>
                                     </div>
@@ -2876,7 +2876,7 @@
                                     <div class="flex items-center justify-between mb-3">
                                         <div class="flex items-center space-x-2">
                                             <label class="relative inline-flex items-center cursor-pointer">
-                                                <input type="checkbox" id="cylinder_head_cooling_enabled_m7" class="sr-only peer">
+                                                <input type="checkbox" id="cylinder_head_cooling_enabled_m7" class="sr-only peer" checked>
                                                 <div class="w-8 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-cyan-500"></div>
                                             </label>
                                             <span class="text-sm font-semibold text-gray-800">缸头冷却 (Cylinder Head Cooling)</span>
@@ -2889,13 +2889,13 @@
                                     <div class="grid grid-cols-2 gap-3 mt-3">
                                         <div>
                                             <label class="block text-[10px] text-gray-500 mb-1">冷却水进水温度 (°C)</label>
-                                            <input type="number" id="cylinder_head_water_inlet_temp_m7" value="30" step="0.1" min="10" max="50" class="glass-input block w-full rounded-lg py-1.5 px-2 text-xs text-gray-900 font-medium">
+                                            <input type="number" id="cylinder_head_water_inlet_temp_m7" value="50" step="0.1" min="10" max="80" class="glass-input block w-full rounded-lg py-1.5 px-2 text-xs text-gray-900 font-medium">
                                             <p class="text-[9px] text-red-600 mt-0.5 font-semibold">⚠️ 必须 > (蒸发温度 + 10K)</p>
                                         </div>
                                         <div>
                                             <label class="block text-[10px] text-gray-500 mb-1">冷却水出水温度 (°C)</label>
-                                            <input type="number" id="cylinder_head_water_outlet_temp_m7" value="35" step="0.1" min="15" max="55" class="glass-input block w-full rounded-lg py-1.5 px-2 text-xs text-gray-900 font-medium">
-                                            <p class="text-[9px] text-gray-400 mt-0.5">典型温升: 5-10 K</p>
+                                            <input type="number" id="cylinder_head_water_outlet_temp_m7" value="60" step="0.1" min="15" max="100" class="glass-input block w-full rounded-lg py-1.5 px-2 text-xs text-gray-900 font-medium">
+                                            <p class="text-[9px] text-gray-400 mt-0.5">典型温升: 5-10 K (必须 > 进水温度)</p>
                                         </div>
                                     </div>
                                     <div class="bg-gray-50/60 rounded-lg p-2 mt-3">

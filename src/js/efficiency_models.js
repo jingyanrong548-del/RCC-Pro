@@ -224,3 +224,91 @@ export function calculateReciprocatingVolumetricEfficiency(
 
     return parseFloat(eta_v.toFixed(4));
 }
+
+/**
+ * 计算活塞压缩机效率（半经验工程公式 - 混合方案）
+ * 混合策略：保守的容积效率 + 高端的等熵效率
+ * 针对氨热泵应用（高压力比、高排气温度）进行优化
+ * 
+ * @param {number} ratio - 压力比 (P_dis / P_suc)
+ * @param {number} k_value - 等熵指数 k (绝热指数)
+ * @param {number} T_cond_celsius - 冷凝温度 (°C)
+ * @param {number} clearance_factor_input - 相对余隙容积（可选，默认0.045）
+ * @returns {Object} { eta_v: 容积效率, eta_is: 等熵效率 }
+ */
+export function calculateEfficiencies(ratio, k_value, T_cond_celsius, clearance_factor_input) {
+    // ==========================================
+    // 1. Hybrid Constants (Conservative λ + High η_is)
+    // ==========================================
+    // Volumetric Efficiency: 恢复到保守标准值（更现实）
+    const CLEARANCE_C = clearance_factor_input || 0.045;  // 标准余隙容积（恢复）
+    const FLOW_RESISTANCE_FACTOR = 0.96;                  // 标准流动阻力因子（恢复）
+    const LEAKAGE_COEFFICIENT = 0.012;                    // 标准泄漏系数（恢复，1.2%损失/压力比）
+    
+    // Isentropic Efficiency: 通过提高机械效率补偿较低的λ，保持高端性能
+    const MECHANICAL_EFF_BASE = 0.95;                     // 高机械效率（从0.89提升，补偿较低的λ）
+
+    // 参数验证
+    if (isNaN(ratio) || ratio < 1) {
+        console.warn('[Efficiency] Invalid pressure ratio');
+        return { eta_v: 0.75, eta_is: 0.70 };
+    }
+    if (isNaN(k_value) || k_value < 1.0 || k_value > 2.0) {
+        console.warn('[Efficiency] Invalid k value, using default 1.3');
+        k_value = 1.3;
+    }
+
+    // ==========================================
+    // 2. Volumetric Efficiency (λ) Calculation
+    // ==========================================
+    // Step 1: Theoretical Lambda (Clearance only)
+    // λ_theo = 1 - C × [(Ratio)^(1/k) - 1]
+    const expansion_term = Math.pow(ratio, 1.0 / k_value) - 1.0;
+    const lambda_theo = 1.0 - CLEARANCE_C * expansion_term;
+
+    // Step 2: Real Lambda (Apply Leakage & Resistance)
+    // Leakage Correction: 标准泄漏损失
+    // Loss = 0.012 × Ratio (例如：Ratio=5时，损失6%效率)
+    const leakage_loss = LEAKAGE_COEFFICIENT * ratio;
+    
+    // Real Lambda Formula:
+    // λ_real = (λ_theo × FLOW_RESISTANCE_FACTOR) - leakage_loss
+    let lambda_real = (lambda_theo * FLOW_RESISTANCE_FACTOR) - leakage_loss;
+
+    // Clamp: Ensure λ_real is never > 0.92 or < 0.2
+    // 恢复标准上限（保守值）
+    lambda_real = Math.max(0.2, Math.min(0.92, lambda_real));
+
+    // ==========================================
+    // 3. Isentropic Efficiency (η_is) Calculation
+    // ==========================================
+    // Step 1: Base Isentropic
+    // 通过提高机械效率因子（0.95）补偿较低的λ，保持高端等熵效率
+    // η_is_base = λ_real × MECHANICAL_EFF_BASE
+    // Example: λ=0.78, η_is_base = 0.78 × 0.95 = 0.741 (保持高端性能)
+    let eta_is_base = lambda_real * MECHANICAL_EFF_BASE;
+
+    // Step 2: Heat Pump (High Temp) Correction (Relaxed)
+    // 仅在高冷凝温度时应用修正（氨热泵模式）
+    // 阈值保持55°C（放宽的阈值）
+    let correction_factor = 1.0;
+    if (!isNaN(T_cond_celsius) && T_cond_celsius > 55) {
+        // Correction Factor = 1.0 - ((T_c - 55) × 0.002)
+        // 修正系数0.002/度（温和的修正）
+        // Example: At 70°C, factor = 1.0 - 0.03 = 0.97
+        correction_factor = 1.0 - ((T_cond_celsius - 55) * 0.002);
+        correction_factor = Math.max(0.70, Math.min(1.0, correction_factor)); // 限制范围
+    }
+
+    // Step 3: Final η_is
+    // η_is = η_is_base × Correction_Factor
+    let eta_is = eta_is_base * correction_factor;
+
+    // 边界保护：等熵效率不超过0.85（活塞压缩机的热力学极限）
+    eta_is = Math.max(0.50, Math.min(0.85, eta_is));
+
+    return {
+        eta_v: parseFloat(lambda_real.toFixed(4)),
+        eta_is: parseFloat(eta_is.toFixed(4))
+    };
+}

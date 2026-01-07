@@ -148,7 +148,7 @@
     "coolingCOP": "Cooling COP",
     "heatingCOP": "Heating COP",
     "coolingCapacity": "Cooling Capacity (Cooling)",
-    "heatingCapacity": "Total Heating (Heating)",
+    "heatingCapacity": "Usable Heating (Heating)",
     "powerAndEfficiency": "Power & Efficiency",
     "shaftPower": "Shaft Power",
     "calculationInterrupted": "Calculation Interrupted",
