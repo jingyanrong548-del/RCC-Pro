@@ -1,9 +1,10 @@
 // =====================================================================
-// mode2_oil_refrig.js: 模式一 (制冷热泵) - v7.4.4 Flash Tank Fix
-// 职责: “双核计算” + VSD + SLHX迭代 + 影子计算
-// 修复: 
-// 1. [v7.4.3] P-h图 Subcooler 2-3 断线修复
-// 2. [v7.4.4] P-h图 Flash Tank 2-3 断线修复 (本次修复)
+// mode2_oil_refrig.js: 模式一 (制冷热泵单级) - v8.0 单级压缩版本
+// 职责: "双核计算" + VSD + SLHX迭代 + 影子计算
+// 特点: 
+// 1. 单级压缩（不使用经济器ECO）
+// 2. 参考mode7（氨热泵）的逻辑，但去掉降低过热器
+// 3. 保留SLHX（回热器）功能
 // =====================================================================
 
 import { openMobileSheet } from './ui.js';
@@ -39,7 +40,7 @@ let lastCalculationData = null;
 let calcButtonM2, calcFormM2, printButtonM2, fluidSelectM2, fluidInfoDivM2;
 let resultsDesktopM2, resultsMobileM2, summaryMobileM2;
 let autoEffCheckboxM2, tempEvapM2, tempCondM2, etaVM2, etaSM2;
-let ecoCheckbox, ecoSatTempInput, ecoSuperheatInput, ecoDtInput, tempDischargeActualM2;
+// 单级压缩：不使用经济器，移除相关变量
 let polyRefRpmInput, polyRefDispInput, vsdCheckboxM2, ratedRpmInputM2, polyCorrectionPanel;
 let slhxCheckbox, slhxEffInput;
 // Compressor Model Selectors
@@ -456,7 +457,6 @@ function calculateMode2() {
             const Tc_C = parseFloat(document.getElementById('temp_cond_m2').value);
             const superheat_K = parseFloat(document.getElementById('superheat_m2').value);
             const subcooling_K = parseFloat(document.getElementById('subcooling_m2').value);
-            const T_2a_est_C = parseFloat(tempDischargeActualM2.value);
             const motor_eff = parseFloat(document.getElementById('motor_eff_m2').value);
             
             // VSD Inputs
@@ -472,8 +472,9 @@ function calculateMode2() {
             AppState.updateVSD(isVsdEnabled, ratedRpm, currentRpm);
             AppState.updateSLHX(isSlhxEnabled, slhxEff);
 
-            if (isNaN(Te_C) || isNaN(Tc_C) || T_2a_est_C <= Tc_C) 
-                throw new Error("Invalid Temp Inputs (Discharge > Cond > Evap).");
+            // 单级压缩：只验证基本温度输入，不使用预估排气温度
+            if (isNaN(Te_C) || isNaN(Tc_C) || Tc_C <= Te_C) 
+                throw new Error("Invalid Temp Inputs (Cond > Evap).");
 
             // --- Common Physics (CoolProp SI Units) ---
             const T_evap_K = Te_C + 273.15;
@@ -501,15 +502,9 @@ function calculateMode2() {
             let h_liq_in = h_3; 
             let h_liq_out = h_3; 
             
-            const isEcoEnabled = ecoCheckbox.checked;
-            const ecoType = document.querySelector('input[name="eco_type_m2"]:checked').value; 
-            const ecoPressMode = document.querySelector('input[name="eco_press_mode_m2"]:checked').value; 
-            const eco_superheat_K = parseFloat(document.getElementById('eco_superheat_m2').value);
-            const eco_dt_K = parseFloat(document.getElementById('eco_dt_m2').value) || 5.0;
-            let m_dot_inj = 0, m_dot_total = 0;
-            let P_eco_Pa = 0, T_eco_sat_K = 0;
-            let h_5 = h_3, h_6 = 0, h_7 = h_3; 
-            let m_p5 = 0, m_p6 = 0, m_p7 = 0; 
+            // 单级压缩：不使用经济器
+            const isEcoEnabled = false;
+            let m_dot_total = 0; 
 
             let eta_v_display = null, eta_s_display = null;
             let efficiency_info_text = "";
@@ -601,46 +596,13 @@ function calculateMode2() {
                     efficiency_info_text = isVsdEnabled ? "Poly (VSD Corr)" : "Poly-Fit";
                 }
 
-                // 3. ECO Calculation (Determines liquid state entering SLHX)
-                if (isEcoEnabled) {
-                    if (ecoPressMode === 'auto') {
-                        P_eco_Pa = Math.sqrt(Pe_Pa * Pc_Pa);
-                        T_eco_sat_K = CP_INSTANCE.PropsSI('T', 'P', P_eco_Pa, 'Q', 0, fluid);
-                    } else {
-                        const T_eco_input = parseFloat(ecoSatTempInput.value);
-                        T_eco_sat_K = T_eco_input + 273.15;
-                        P_eco_Pa = CP_INSTANCE.PropsSI('P', 'T', T_eco_sat_K, 'Q', 0.5, fluid);
-                    }
-                    const h_eco_liq = CP_INSTANCE.PropsSI('H', 'T', T_eco_sat_K, 'Q', 0, fluid);
-                    const h_eco_vap = CP_INSTANCE.PropsSI('H', 'T', T_eco_sat_K, 'Q', 1, fluid);
-                    h_7 = h_3; 
-
-                    if (ecoType === 'flash_tank') {
-                        h_6 = h_eco_vap; h_5 = h_eco_liq; 
-                        const x_flash = (h_7 - h_5) / (h_6 - h_5);
-                        m_dot_inj = m_dot_suc * (x_flash / (1 - x_flash));
-                        m_dot_total = m_dot_suc + m_dot_inj;
-                        h_liq_in = h_5; // Flash tank saturated liquid -> SLHX
-                        m_p7 = m_dot_total; m_p5 = m_dot_suc; m_p6 = m_dot_inj;   
-                    } else {
-                        // Subcooler
-                        const T_inj_K = T_eco_sat_K + eco_superheat_K;
-                        h_6 = CP_INSTANCE.PropsSI('H', 'T', T_inj_K, 'P', P_eco_Pa, fluid); 
-                        const T_5_K = T_eco_sat_K + eco_dt_K; 
-                        h_5 = CP_INSTANCE.PropsSI('H', 'T', T_5_K, 'P', Pc_Pa, fluid); 
-                        h_liq_in = h_5; // Subcooler outlet -> SLHX
-                        m_dot_inj = (m_dot_suc * (h_3 - h_5)) / (h_6 - h_7); 
-                        m_dot_total = m_dot_suc + m_dot_inj;
-                        m_p5 = m_dot_suc; m_p7 = m_dot_inj; m_p6 = m_dot_inj;
-                    }
-                } else {
-                    m_dot_total = m_dot_suc;
-                    h_liq_in = h_3; // Condenser liquid -> SLHX
-                }
+                // 3. 单级压缩：不使用经济器，直接使用冷凝器出口液体
+                m_dot_total = m_dot_suc;
+                h_liq_in = h_3; // Condenser liquid -> SLHX
 
                 // 4. SLHX Loop
                 if (isSlhxEnabled) {
-                    const P_liq_side = (isEcoEnabled && ecoType === 'flash_tank') ? P_eco_Pa : Pc_Pa;
+                    const P_liq_side = Pc_Pa; // 单级压缩：液侧在冷凝压力
                     const T_liq_in = CP_INSTANCE.PropsSI('T', 'H', h_liq_in, 'P', P_liq_side, fluid);
                     
                     const Cp_liq = CP_INSTANCE.PropsSI('C', 'H', h_liq_in, 'P', P_liq_side, fluid);
@@ -669,36 +631,15 @@ function calculateMode2() {
             } 
 
             // =========================================================
-            // Work & Finalization
+            // Work & Finalization - 单级压缩
             // =========================================================
-            let W_ideal_W = 0;
-            let h_mid_1s = 0, h_mix_s = 0, h_2s_stage2 = 0;  // 用于p-h图
-            if (!isEcoEnabled) {
-                const h_2s = CP_INSTANCE.PropsSI('H', 'P', Pc_Pa, 'S', s_suc, fluid);
-                W_ideal_W = m_dot_suc * (h_2s - h_suc);
-            } else {
-                h_mid_1s = CP_INSTANCE.PropsSI('H', 'P', P_eco_Pa, 'S', s_suc, fluid);
-                const W_s1 = m_dot_suc * (h_mid_1s - h_suc);
-                h_mix_s = (m_dot_suc * h_mid_1s + m_dot_inj * h_6) / m_dot_total;
-                
-                // 验证混合逻辑：h_mix_s应该小于h_mid_1s（因为h_6 < h_mid_1s）
-                if (h_mix_s >= h_mid_1s) {
-                    console.warn(`混合逻辑异常：h_mix_s (${h_mix_s.toFixed(1)} J/kg) >= h_mid_1s (${h_mid_1s.toFixed(1)} J/kg)，补气温度可能异常`);
-                }
-                
-                const s_mix = CP_INSTANCE.PropsSI('S', 'H', h_mix_s, 'P', P_eco_Pa, fluid);
-                h_2s_stage2 = CP_INSTANCE.PropsSI('H', 'P', Pc_Pa, 'S', s_mix, fluid);
-                const W_s2 = m_dot_total * (h_2s_stage2 - h_mix_s);
-                W_ideal_W = W_s1 + W_s2;
-            }
+            // 单级压缩：从吸气状态等熵压缩到排气压力
+            const h_2s = CP_INSTANCE.PropsSI('H', 'P', Pc_Pa, 'S', s_suc, fluid);
+            const W_ideal_W = m_dot_suc * (h_2s - h_suc);
 
             if (AppState.currentMode === AppState.MODES.GEOMETRY) {
-                const eff_mode = document.querySelector('input[name="eff_mode_m2"]:checked').value;
-                if (eff_mode === 'shaft') {
-                    W_shaft_W = W_ideal_W / eta_s_display;
-                } else {
-                    W_shaft_W = (W_ideal_W / eta_s_display) * motor_eff;
-                }
+                // 单级压缩：只使用轴功率基准
+                W_shaft_W = W_ideal_W / eta_s_display;
             } else {
                 if (W_shaft_W > 0) eta_s_display = W_ideal_W / W_shaft_W;
             }
@@ -706,24 +647,9 @@ function calculateMode2() {
             const Q_evap_W = m_dot_suc * (h_1 - h_liq_out); 
             const W_input_W = W_shaft_W / motor_eff;
 
-            // RCC Pro: 活塞压缩机排气温度计算（基于等熵效率，无油冷）
-            const h6_safe = isEcoEnabled ? h_6 : 0;
-            const h_system_in = (m_dot_suc * h_suc + m_dot_inj * h6_safe); 
-            
-            // 计算等熵压缩终点焓值
-            let h_2s = 0;
-            if (!isEcoEnabled) {
-                h_2s = CP_INSTANCE.PropsSI('H', 'P', Pc_Pa, 'S', s_suc, fluid);
-            } else {
-                // 双级压缩：先计算第一级等熵压缩
-                const h_mid_1s = CP_INSTANCE.PropsSI('H', 'P', P_eco_Pa, 'S', s_suc, fluid);
-                const h_mix_s = (m_dot_suc * h_mid_1s + m_dot_inj * h_6) / m_dot_total;
-                const s_mix = CP_INSTANCE.PropsSI('S', 'H', h_mix_s, 'P', P_eco_Pa, fluid);
-                h_2s = CP_INSTANCE.PropsSI('H', 'P', Pc_Pa, 'S', s_mix, fluid);
-            }
-            
-            // 实际排气焓值：h_dis = h_suc + (h_dis_is - h_suc) / η_is
-            const h_2a_final = h_system_in + (h_2s - h_system_in) / eta_s_display;
+            // RCC Pro: 活塞压缩机排气温度计算（基于等熵效率，单级压缩）
+            // 单级压缩：实际排气焓值 = h_suc + (h_2s - h_suc) / η_is
+            const h_2a_final = h_suc + (h_2s - h_suc) / eta_s_display;
             const T_2a_final_K = CP_INSTANCE.PropsSI('T', 'P', Pc_Pa, 'H', h_2a_final, fluid);
             const T_2a_final_C = T_2a_final_K - 273.15;
             
@@ -734,7 +660,8 @@ function calculateMode2() {
             
             // 活塞压缩机无油冷，Q_oil_W = 0
             const Q_oil_W = 0;
-            const Q_cond_W = m_dot_total * (h_2a_final - h_3);
+            // 单级压缩：冷凝器负荷 = 质量流量 × (排气焓 - 冷凝器出口焓)
+            const Q_cond_W = m_dot_suc * (h_2a_final - h_3);
             const Q_heating_total_W = Q_cond_W;
 
             const COP_R = Q_evap_W / W_input_W;
@@ -751,24 +678,11 @@ function calculateMode2() {
                 const m_dot_base = m_dot_suc * (rho_1 / rho_suc);
                 const q_cool_base = m_dot_base * (h_1 - h_liq_in);
                 
-                // Recalculate base work with original suction state
+                // Recalculate base work with original suction state (单级压缩)
                 const s_1 = CP_INSTANCE.PropsSI('S', 'H', h_1, 'P', Pe_Pa, fluid);
-                let w_shaft_base = 0;
-                if (!isEcoEnabled) {
-                    const h_2s_base = CP_INSTANCE.PropsSI('H', 'P', Pc_Pa, 'S', s_1, fluid);
-                    const w_ideal_base = m_dot_base * (h_2s_base - h_1);
-                    w_shaft_base = w_ideal_base / eta_s_display;
-                } else {
-                    const h_mid_1s_base = CP_INSTANCE.PropsSI('H', 'P', P_eco_Pa, 'S', s_1, fluid);
-                    const w_s1_base = m_dot_base * (h_mid_1s_base - h_1);
-                    const m_inj_base = m_dot_inj * (m_dot_base / m_dot_suc);
-                    const m_total_base = m_dot_base + m_inj_base;
-                    const h_mix_s_base = (m_dot_base * h_mid_1s_base + m_inj_base * h_6) / m_total_base;
-                    const s_mix_base = CP_INSTANCE.PropsSI('S', 'H', h_mix_s_base, 'P', P_eco_Pa, fluid);
-                    const h_2s_stage2_base = CP_INSTANCE.PropsSI('H', 'P', Pc_Pa, 'S', s_mix_base, fluid);
-                    const w_s2_base = m_total_base * (h_2s_stage2_base - h_mix_s_base);
-                    w_shaft_base = (w_s1_base + w_s2_base) / eta_s_display;
-                }
+                const h_2s_base = CP_INSTANCE.PropsSI('H', 'P', Pc_Pa, 'S', s_1, fluid);
+                const w_ideal_base = m_dot_base * (h_2s_base - h_1);
+                const w_shaft_base = w_ideal_base / eta_s_display;
 
                 const w_in_base = w_shaft_base / motor_eff;
                 const q_heat_base = q_cool_base + w_shaft_base;
@@ -783,7 +697,8 @@ function calculateMode2() {
                 };
 
                 // 计算回热器选型参数
-                const P_liq_side = (isEcoEnabled && ecoType === 'flash_tank') ? P_eco_Pa : Pc_Pa;
+                // 单级压缩：液侧在冷凝压力
+                const P_liq_side = Pc_Pa;
                 const T_liq_in = CP_INSTANCE.PropsSI('T', 'H', h_liq_in, 'P', P_liq_side, fluid) - 273.15;
                 const T_liq_out = CP_INSTANCE.PropsSI('T', 'H', h_liq_out, 'P', P_liq_side, fluid) - 273.15;
                 const T_vap_in = T_1_K - 273.15;
@@ -796,7 +711,6 @@ function calculateMode2() {
                 const C_min = Math.min(C_liq, C_vap);
                 const Q_max = C_min * (T_liq_in - T_vap_in);
                 const Q_slhx = slhxEff * Q_max;
-
                 slhxSelection = {
                     hot_side: {
                         inlet: {
@@ -837,118 +751,7 @@ function calculateMode2() {
                 `;
             }
 
-            // 2. ECO Benefit (Current vs No-ECO)
-            let ecoHtml = '';
-            let economizerSelection = null;
-            let flashTankSelection = null;
-            if (isEcoEnabled) {
-                const q_cool_base_eco = m_dot_suc * (h_suc - h_3); 
-                const h_2s_base_eco = CP_INSTANCE.PropsSI('H', 'P', Pc_Pa, 'S', s_suc, fluid);
-                const W_ideal_base_eco = m_dot_suc * (h_2s_base_eco - h_suc);
-                const W_shaft_base_eco = W_ideal_base_eco / eta_s_display;
-                const w_in_base_eco = W_shaft_base_eco / motor_eff;
-                const q_heat_base_eco = q_cool_base_eco + W_shaft_base_eco;
-                const cop_c_base_eco = q_cool_base_eco / w_in_base_eco;
-                const cop_h_base_eco = q_heat_base_eco / w_in_base_eco;
-
-                const ecoData = {
-                    Qc: { val: (Q_evap_W/1000).toFixed(2), diff: ((Q_evap_W - q_cool_base_eco)/q_cool_base_eco)*100 },
-                    Qh: { val: (Q_heating_total_W/1000).toFixed(2), diff: ((Q_heating_total_W - q_heat_base_eco)/q_heat_base_eco)*100 },
-                    COPc: { val: COP_R.toFixed(2), diff: ((COP_R - cop_c_base_eco)/cop_c_base_eco)*100 },
-                    COPh: { val: COP_H.toFixed(2), diff: ((COP_H - cop_h_base_eco)/cop_h_base_eco)*100 }
-                };
-
-                // 计算经济器选型参数
-                const T_3_C = T_3_K - 273.15;
-                const T_eco_sat_C = T_eco_sat_K - 273.15;
-                
-                if (ecoType === 'flash_tank') {
-                    // 闪蒸罐模式：计算闪蒸罐选型参数
-                    const T_7_C = CP_INSTANCE.PropsSI('T', 'H', h_7, 'P', P_eco_Pa, fluid) - 273.15;
-                    const T_5_C = CP_INSTANCE.PropsSI('T', 'P', P_eco_Pa, 'Q', 0, fluid) - 273.15;
-                    const T_6_C = CP_INSTANCE.PropsSI('T', 'P', P_eco_Pa, 'Q', 1, fluid) - 273.15;
-                    
-                    // 计算闪蒸干度
-                    const x_flash = (h_7 - h_5) / (h_6 - h_5);
-                    const vapor_liquid_ratio = m_dot_inj / m_dot_suc;
-                    
-                    flashTankSelection = {
-                        working_pressure: P_eco_Pa / 1e5,
-                        sat_temp: T_eco_sat_C,
-                        inlet: {
-                            T_C: T_7_C,
-                            P_bar: P_eco_Pa / 1e5,
-                            h_kJ: h_7 / 1000,
-                            quality: x_flash
-                        },
-                        outlet_vapor: {
-                            T_C: T_6_C,
-                            P_bar: P_eco_Pa / 1e5,
-                            h_kJ: h_6 / 1000,
-                            m_dot: m_dot_inj
-                        },
-                        outlet_liquid: {
-                            T_C: T_5_C,
-                            P_bar: P_eco_Pa / 1e5,
-                            h_kJ: h_5 / 1000,
-                            m_dot: m_dot_suc
-                        },
-                        flash_quality: x_flash,
-                        vapor_liquid_ratio: vapor_liquid_ratio,
-                        total_inlet_flow: m_dot_total,
-                        vapor_outlet_flow: m_dot_inj,
-                        liquid_outlet_flow: m_dot_suc
-                    };
-                } else {
-                    // 过冷器模式：计算换热器选型参数
-                    const T_7_C = CP_INSTANCE.PropsSI('T', 'H', h_7, 'P', P_eco_Pa, fluid) - 273.15;
-                    const T_5_K = T_eco_sat_K + eco_dt_K;
-                    const T_5_C = T_5_K - 273.15;
-                    const T_inj_K = T_eco_sat_K + eco_superheat_K;
-                    const T_6_C = T_inj_K - 273.15;
-                    const Q_eco_hot_W = m_dot_suc * (h_3 - h_5);
-                    const Q_eco_cold_W = m_dot_inj * (h_6 - h_7);
-                    
-                    economizerSelection = {
-                        hot_side: {
-                            inlet: {
-                                T_C: T_3_C,
-                                P_bar: Pc_Pa / 1e5,
-                                h_kJ: h_3 / 1000,
-                                m_dot: m_dot_suc
-                            },
-                            outlet: {
-                                T_C: T_5_C,
-                                P_bar: Pc_Pa / 1e5,
-                                h_kJ: h_5 / 1000,
-                                m_dot: m_dot_suc
-                            },
-                            Q_kW: Q_eco_hot_W / 1000
-                        },
-                        cold_side: {
-                            inlet: {
-                                T_C: T_7_C,
-                                P_bar: P_eco_Pa / 1e5,
-                                h_kJ: h_7 / 1000,
-                                m_dot: m_dot_inj
-                            },
-                            outlet: {
-                                T_C: T_6_C,
-                                P_bar: P_eco_Pa / 1e5,
-                                h_kJ: h_6 / 1000,
-                                m_dot: m_dot_inj
-                            },
-                            Q_kW: Q_eco_cold_W / 1000
-                        }
-                    };
-                }
-
-                ecoHtml = `
-                    ${createSectionHeader('Economizer Benefit', '⚡')}
-                    ${createDetailRow('P_eco', `${(P_eco_Pa/1e5).toFixed(2)} bar`)}
-                    ${createImpactGrid(ecoData, 'teal')}
-                `;
-            }
+            // 2. 单级压缩：不使用经济器，无需ECO Benefit计算
 
             // --- Chart ---
             const point = (name, h_j, p_pa, pos='top') => ({ name, value: [h_j/1000, p_pa/1e5], label: { position: pos, show: true } });
@@ -959,78 +762,16 @@ function calculateMode2() {
             const pt3 = point('3', h_3, Pc_Pa, 'top');
             const pt4 = point('4', h_liq_out, Pe_Pa, 'bottom'); 
             
-            // 点5'的压力（用于SLHX后的液体）
-            let P_5p_chart = Pc_Pa;
-            if (isEcoEnabled && ecoType === 'flash_tank') P_5p_chart = P_eco_Pa;
-            const pt5_p = isSlhxEnabled ? point("5'", h_liq_out, P_5p_chart, 'top') : null;
+            // 单级压缩：点5'的压力在冷凝压力
+            const pt5_p = isSlhxEnabled ? point("5'", h_liq_out, Pc_Pa, 'top') : null;
             
-            // 点5的压力（关键差异：Flash Tank用P_eco，Subcooler用Pc）
-            let P_5_chart = Pc_Pa;
-            if (isEcoEnabled && ecoType === 'flash_tank') P_5_chart = P_eco_Pa;
-            const pt5 = isEcoEnabled ? point('5', h_5, P_5_chart, 'top') : null;
-
             let mainPoints = [], ecoLiquidPoints = [], ecoVaporPoints = [];
 
-            if (!isEcoEnabled) {
-                if (isSlhxEnabled) {
-                    mainPoints = [pt1, pt1_p, pt2, pt3, pt5_p, pt4, pt1];
-                } else {
-                    mainPoints = [pt1, pt2, pt3, pt4, pt1];
-                }
+            // 单级压缩：不使用经济器
+            if (isSlhxEnabled) {
+                mainPoints = [pt1, pt1_p, pt2, pt3, pt5_p, pt4, pt1];
             } else {
-                if (ecoType === 'flash_tank') {
-                    const pt7 = point('7', h_7, P_eco_Pa, 'right');
-                    
-                    // 创建压缩线上的点：mid（第一级压缩终点，补气前）、mix（混合后的状态）、点2（实际排气点）
-                    // 点6（补气点，混合前的状态）通过补气路显示
-                    const pt1_start = isSlhxEnabled ? pt1_p : pt1;
-                    const pt_mid = point('mid', h_mid_1s, P_eco_Pa, 'right');  // 第一级压缩终点（补气前）
-                    const pt6 = point('6', h_6, P_eco_Pa, 'left');  // 点6（补气点，混合前的状态）
-                    const pt_mix = point('mix', h_mix_s, P_eco_Pa, 'left');  // 混合点（混合后），在mid左边（焓值更小）
-                    
-                    // 压缩线：4 -> 1 -> 1' -> mid -> mix -> 2 -> 3
-                    // 注意：点mix在点mid的左边（焓值更小），因为混合后温度降低
-                    // 点6通过补气路连接到mix点，表示补气进入混合
-                    // 压缩后排气只有1个点（点2）
-                    mainPoints = [pt4, pt1, pt1_start, pt_mid, pt_mix, pt2, pt3];
-
-                    // 液路：3 -> 7 -> 5 -> [5'] -> 4
-                    ecoLiquidPoints = [pt3, pt7, pt5];
-                    if (isSlhxEnabled) ecoLiquidPoints.push(pt5_p, pt4);
-                    else ecoLiquidPoints.push(pt4);
-
-                    // 补气路：7 -> 6（补气进入，点6表示混合前的补气状态）
-                    ecoVaporPoints = [pt7, pt6];
-                } else {
-                    // Subcooler模式：双级压缩过程
-                    const pt7 = point('7', h_7, P_eco_Pa, 'right');
-                    
-                    // 创建压缩线上的点：mid（第一级压缩终点，补气前）、mix（混合后的状态）、点2（实际排气点）
-                    // 点6（补气点，混合前的状态）通过补气路显示
-                    const pt1_start = isSlhxEnabled ? pt1_p : pt1;
-                    const pt_mid = point('mid', h_mid_1s, P_eco_Pa, 'right');  // 第一级压缩终点（补气前）
-                    const pt6 = point('6', h_6, P_eco_Pa, 'left');  // 点6（补气点，混合前的状态）
-                    const pt_mix = point('mix', h_mix_s, P_eco_Pa, 'left');  // 混合点（混合后），在mid左边（焓值更小）
-                    
-                    // 液路：3 -> 5 -> [5'] -> 4
-                    ecoLiquidPoints = [pt3, pt5];
-                    if (isSlhxEnabled) ecoLiquidPoints.push(pt5_p, pt4);
-                    else ecoLiquidPoints.push(pt4);
-
-                    // 压缩线：4 -> 1 -> [1'] -> mid -> mix -> 2 -> 3
-                    // 注意：点mix在点mid的左边（焓值更小），因为混合后温度降低
-                    // 点6通过补气路连接到mix点，表示补气进入混合
-                    // 压缩后排气只有1个点（点2）
-                    mainPoints = [pt4, pt1];
-                    if (isSlhxEnabled) {
-                        mainPoints.push(pt1_start);
-                    }
-                    mainPoints.push(pt_mid, pt_mix, pt2, pt3);
-
-                    // 补气路：3 -> 7 -> 6（补气进入，点6表示混合前的补气状态）
-                    const pt3_clone = point('', h_3, Pc_Pa);
-                    ecoVaporPoints = [pt3_clone, pt7, pt6];
-                }
+                mainPoints = [pt1, pt2, pt3, pt4, pt1];
             }
 
             // 生成饱和线数据
@@ -1048,24 +789,24 @@ function calculateMode2() {
                 chartType: 'ph', // 默认显示 P-h 图
                 fluid,
                 mainPoints,
-                ecoLiquidPoints,
-                ecoVaporPoints,
+                ecoLiquidPoints: [], // 单级压缩：无经济器液路
+                ecoVaporPoints: [], // 单级压缩：无经济器气路
                 mainPointsTS,
-                ecoLiquidPointsTS,
-                ecoVaporPointsTS,
+                ecoLiquidPointsTS: [],
+                ecoVaporPointsTS: [],
                 satLinesPH,
                 satLinesTS,
                 isSlhxEnabled,
-                isEcoEnabled
+                isEcoEnabled: false // 单级压缩：不使用经济器
             };
             
             // 绘制 P-h 图（默认）
             ['chart-desktop-m2', 'chart-mobile-m2'].forEach(id => {
                 drawPHDiagram(id, {
-                    title: `P-h Diagram (${fluid}) [${isSlhxEnabled?'SLHX+':''}${isEcoEnabled?'ECO+':''}]`,
+                    title: `P-h Diagram (${fluid}) [${isSlhxEnabled?'SLHX+':''}]`,
                     mainPoints, 
-                    ecoLiquidPoints, 
-                    ecoVaporPoints,
+                    ecoLiquidPoints: [], // 单级压缩：无经济器
+                    ecoVaporPoints: [], // 单级压缩：无经济器
                     saturationLiquidPoints: satLinesPH.liquidPH,
                     saturationVaporPoints: satLinesPH.vaporPH,
                     xLabel: 'Enthalpy (kJ/kg)', 
@@ -1074,7 +815,7 @@ function calculateMode2() {
             });
 
             // --- HTML Table ---
-            // 注意：点1和点mid的质量流应该相同（都是m_dot_suc），因为补气发生在第一级压缩之后
+            // 单级压缩：不使用经济器
             const statePoints = [
                 { name: '1', desc: 'Evap Out', temp: Te_C.toFixed(1), press: (Pe_Pa/1e5).toFixed(2), enth: (h_1/1000).toFixed(1), flow: m_dot_suc.toFixed(3) },
             ];
@@ -1082,62 +823,17 @@ function calculateMode2() {
                 statePoints.push({ name: "1'", desc: 'Comp In (SLHX)', temp: (T_suc_K-273.15).toFixed(1), press: (Pe_Pa/1e5).toFixed(2), enth: (h_suc/1000).toFixed(1), flow: m_dot_suc.toFixed(3) });
             }
             
-            // 压缩过程状态点（带经济器时）
-            if (isEcoEnabled) {
-                // 点mid：第一级压缩终点（补气前）
-                // 注意：点mid的质量流是经济器蒸发的气体量（补气流量m_dot_inj），不是蒸发器的蒸发量
-                // 点1的质量流是蒸发器的蒸发量（m_dot_suc），两者概念不同
-                const T_mid_K = CP_INSTANCE.PropsSI('T', 'P', P_eco_Pa, 'H', h_mid_1s, fluid);
-                statePoints.push({
-                    name: 'mid',
-                    desc: 'Comp Stage1 Out (Pre-Inj)',
-                    temp: (T_mid_K - 273.15).toFixed(1),
-                    press: (P_eco_Pa / 1e5).toFixed(2),
-                    enth: (h_mid_1s / 1000).toFixed(1),
-                    flow: m_dot_inj.toFixed(3)  // 经济器蒸发的气体量（补气流量）
-                });
-                
-                // 点mix：混合后的状态
-                const T_mix_K = CP_INSTANCE.PropsSI('T', 'P', P_eco_Pa, 'H', h_mix_s, fluid);
-                statePoints.push({
-                    name: 'mix',
-                    desc: 'After Mixing',
-                    temp: (T_mix_K - 273.15).toFixed(1),
-                    press: (P_eco_Pa / 1e5).toFixed(2),
-                    enth: (h_mix_s / 1000).toFixed(1),
-                    flow: m_dot_total.toFixed(3)
-                });
-            }
-            
             statePoints.push(
-                { name: '2', desc: 'Discharge', temp: T_2a_final_C.toFixed(1), press: (Pc_Pa/1e5).toFixed(2), enth: (h_2a_final/1000).toFixed(1), flow: m_dot_total.toFixed(3) },
-                { name: '3', desc: 'Cond Out', temp: (T_3_K-273.15).toFixed(1), press: (Pc_Pa/1e5).toFixed(2), enth: (h_3/1000).toFixed(1), flow: m_dot_total.toFixed(3) }
+                { name: '2', desc: 'Discharge', temp: T_2a_final_C.toFixed(1), press: (Pc_Pa/1e5).toFixed(2), enth: (h_2a_final/1000).toFixed(1), flow: m_dot_suc.toFixed(3) },
+                { name: '3', desc: 'Cond Out', temp: (T_3_K-273.15).toFixed(1), press: (Pc_Pa/1e5).toFixed(2), enth: (h_3/1000).toFixed(1), flow: m_dot_suc.toFixed(3) }
             );
-            
-            if (isEcoEnabled) {
-                // [Bug Fix 2]: Add Point 6 and 7 for ECO modes
-                if (ecoType === 'flash_tank') {
-                    statePoints.push(
-                        { name: '7', desc: 'Flash In (Valve)', temp: (CP_INSTANCE.PropsSI('T','P',P_eco_Pa,'Q',0,fluid)-273.15).toFixed(1), press: (P_eco_Pa/1e5).toFixed(2), enth: (h_7/1000).toFixed(1), flow: m_p7.toFixed(3) },
-                        { name: '6', desc: 'Injection Gas', temp: (CP_INSTANCE.PropsSI('T','P',P_eco_Pa,'Q',1,fluid)-273.15).toFixed(1), press: (P_eco_Pa/1e5).toFixed(2), enth: (h_6/1000).toFixed(1), flow: m_p6.toFixed(3) },
-                        { name: '5', desc: 'ECO Liq Out', temp: (CP_INSTANCE.PropsSI('T','P',P_eco_Pa,'Q',0,fluid)-273.15).toFixed(1), press: (P_eco_Pa/1e5).toFixed(2), enth: (h_5/1000).toFixed(1), flow: m_p5.toFixed(3) }
-                    );
-                } else {
-                    // Subcooler
-                    statePoints.push(
-                        { name: '7', desc: 'Inj Valve Out', temp: (CP_INSTANCE.PropsSI('T','P',P_eco_Pa,'Q',0,fluid)-273.15).toFixed(1), press: (P_eco_Pa/1e5).toFixed(2), enth: (h_7/1000).toFixed(1), flow: m_p7.toFixed(3) },
-                        { name: '6', desc: 'Injection Gas', temp: (CP_INSTANCE.PropsSI('T','P',P_eco_Pa,'H',h_6,fluid)-273.15).toFixed(1), press: (P_eco_Pa/1e5).toFixed(2), enth: (h_6/1000).toFixed(1), flow: m_p6.toFixed(3) },
-                        { name: '5', desc: 'Subcooler Out', temp: (CP_INSTANCE.PropsSI('T','P',Pc_Pa,'H',h_5,fluid)-273.15).toFixed(1), press: (Pc_Pa/1e5).toFixed(2), enth: (h_5/1000).toFixed(1), flow: m_p5.toFixed(3) }
-                    );
-                }
-            }
             
             if (isSlhxEnabled) {
                 statePoints.push({ 
                     name: "5'", 
                     desc: 'Exp Valve In', 
-                    temp: (CP_INSTANCE.PropsSI('T','H',h_liq_out,'P',P_5p_chart,fluid)-273.15).toFixed(1), 
-                    press: (P_5p_chart/1e5).toFixed(2), 
+                    temp: (CP_INSTANCE.PropsSI('T','H',h_liq_out,'P',Pc_Pa,fluid)-273.15).toFixed(1), 
+                    press: (Pc_Pa/1e5).toFixed(2), 
                     enth: (h_liq_out/1000).toFixed(1), 
                     flow: m_dot_suc.toFixed(3) 
                 });
@@ -1168,13 +864,10 @@ function calculateMode2() {
                     ${isVsdEnabled ? createDetailRow('VSD Status', `${currentRpm} RPM / Ratio: ${rpmRatio.toFixed(2)}`) : ''}
 
                     ${slhxHtml}
-                    ${ecoHtml}
 
                     ${createSectionHeader('State Points Detail', '📊')}
                     ${createStateTable(statePoints)}
                     
-                    ${flashTankSelection ? createFlashTankSelectionTable(flashTankSelection, '闪蒸罐选型参数', '⚡') : ''}
-                    ${economizerSelection ? createHeatExchangerSelectionTable(economizerSelection, i18next.t('components.subcoolerSelection'), '🌡️') : ''}
                     ${slhxSelection ? createHeatExchangerSelectionTable(slhxSelection, i18next.t('components.slhxSelection'), '🔥') : ''}
                 </div>
             `;
@@ -1216,7 +909,7 @@ export function initMode2(CP) {
     printButtonM2 = document.getElementById('print-button-mode-2');
     fluidSelectM2 = document.getElementById('fluid_m2');
     fluidInfoDivM2 = document.getElementById('fluid-info-m2');
-    tempDischargeActualM2 = document.getElementById('temp_discharge_actual_m2');
+    // 单级压缩：不使用预估排气温度输入
     resultsDesktopM2 = document.getElementById('results-desktop-m2');
     resultsMobileM2 = document.getElementById('mobile-results-m2');
     summaryMobileM2 = document.getElementById('mobile-summary-m2');
@@ -1225,10 +918,7 @@ export function initMode2(CP) {
     tempCondM2 = document.getElementById('temp_cond_m2');
     etaVM2 = document.getElementById('eta_v_m2');
     etaSM2 = document.getElementById('eta_s_m2');
-    ecoCheckbox = document.getElementById('enable_eco_m2');
-    ecoSatTempInput = document.getElementById('temp_eco_sat_m2');
-    ecoSuperheatInput = document.getElementById('eco_superheat_m2');
-    ecoDtInput = document.getElementById('eco_dt_m2'); 
+    // 单级压缩：不使用经济器，移除相关UI引用 
     
     // VSD / Poly Inputs
     polyRefRpmInput = document.getElementById('poly_ref_rpm');
@@ -1340,10 +1030,10 @@ function toggleChartTypeM2() {
             }
             
             drawPHDiagram(id, {
-                title: `P-h Diagram (${chartData.fluid}) [${chartData.isSlhxEnabled?'SLHX+':''}${chartData.isEcoEnabled?'ECO+':''}]`,
+                title: `P-h Diagram (${chartData.fluid}) [${chartData.isSlhxEnabled?'SLHX+':''}]`,
                 mainPoints: chartData.mainPoints,
-                ecoLiquidPoints: chartData.ecoLiquidPoints,
-                ecoVaporPoints: chartData.ecoVaporPoints,
+                ecoLiquidPoints: [], // 单级压缩：无经济器
+                ecoVaporPoints: [], // 单级压缩：无经济器
                 saturationLiquidPoints: chartData.satLinesPH.liquidPH,
                 saturationVaporPoints: chartData.satLinesPH.vaporPH,
                 xLabel: 'Enthalpy (kJ/kg)',
@@ -1360,10 +1050,10 @@ function toggleChartTypeM2() {
             }
             
             drawTSDiagram(id, {
-                title: `T-s Diagram (${chartData.fluid}) [${chartData.isSlhxEnabled?'SLHX+':''}${chartData.isEcoEnabled?'ECO+':''}]`,
+                title: `T-s Diagram (${chartData.fluid}) [${chartData.isSlhxEnabled?'SLHX+':''}]`,
                 mainPoints: chartData.mainPointsTS,
-                ecoLiquidPoints: chartData.ecoLiquidPointsTS,
-                ecoVaporPoints: chartData.ecoVaporPointsTS,
+                ecoLiquidPoints: [], // 单级压缩：无经济器
+                ecoVaporPoints: [], // 单级压缩：无经济器
                 saturationLiquidPoints: chartData.satLinesTS.liquid,
                 saturationVaporPoints: chartData.satLinesTS.vapor,
                 xLabel: 'Entropy (kJ/kg·K)',

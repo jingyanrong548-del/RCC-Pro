@@ -92,9 +92,9 @@ document.addEventListener('DOMContentLoaded', () => {
     APP_VERSION.updateDisplay();
 
     // 4. 定义需要被更新状态的元素
-    // 暂时只开通氨热泵模块（M7），其他模块显示维护中
+    // 开通制冷热泵单级模块（M2）和氨热泵模块（M7），其他模块显示维护中
     const buttons = [
-        // document.getElementById('calc-button-mode-2'),
+        document.getElementById('calc-button-mode-2'),
         // document.getElementById('calc-button-mode-3'),
         // document.getElementById('calc-button-mode-3-two-stage'),
         // document.getElementById('calc-button-mode-4'),
@@ -104,7 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ];
     
     const fluidInfos = [
-        // { select: document.getElementById('fluid_m2'), info: document.getElementById('fluid-info-m2') },
+        { select: document.getElementById('fluid_m2'), info: document.getElementById('fluid-info-m2') },
         // { select: document.getElementById('fluid_m3'), info: document.getElementById('fluid-info-m3') },
         // { select: document.getElementById('fluid_m3_two_stage'), info: document.getElementById('fluid-info-m3-two-stage') },
         // { select: document.getElementById('fluid_m4_lt'), info: document.getElementById('fluid-info-m4-lt') },
@@ -115,12 +115,13 @@ document.addEventListener('DOMContentLoaded', () => {
     ];
 
     const buttonTexts = {
+        'calc-button-mode-2': i18next.t('common.calculate'),
         'calc-button-mode-7': i18next.t('common.calculate')
     };
     
     // 设置其他模块按钮为维护中状态
     const maintenanceButtons = [
-        'calc-button-mode-2',
+        // 'calc-button-mode-2', // 已开通
         'calc-button-mode-3',
         'calc-button-mode-3-two-stage',
         'calc-button-mode-4',
@@ -144,8 +145,8 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log("CoolProp loaded successfully.");
 
             // 7. 在CoolProp加载成功后，才初始化依赖于它的计算模块
-            // 暂时只开通氨热泵模块（M7），其他模块显示维护中
-            // initMode2(CP);
+            // 开通制冷热泵单级模块（M2）和氨热泵模块（M7），其他模块显示维护中
+            initMode2(CP);
             // initMode3(CP);
             // initMode3TwoStage(CP);
             // initMode4(CP);
@@ -169,8 +170,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             
             // 10. [修复] 在所有模块都初始化完毕后，再手动触发一次初始的经验效率计算
-            // 暂时只开通氨热泵模块（M7），其他模块显示维护中
-            // triggerMode2EfficiencyUpdate();
+            // 开通制冷热泵单级模块（M2）和氨热泵模块（M7），其他模块显示维护中
+            triggerMode2EfficiencyUpdate();
             // triggerMode3EfficiencyUpdate();
             // triggerMode3TwoStageEfficiencyUpdate();
             // triggerMode4EfficiencyUpdate();

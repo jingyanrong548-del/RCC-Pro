@@ -171,9 +171,9 @@ export function initUI() {
             }
         });
 
-        // 如果切换到制冷热泵模式，默认显示氨热泵模块（M7）
+        // 如果切换到制冷热泵模式，默认显示单级模块（M2）
         if (mainIdx === 0) {
-            switchSubTab(4, true); // 直接切换到M7，不显示alert
+            switchSubTab(0, true); // 直接切换到M2，不显示alert
         }
         // 如果切换到气体压缩模式，隐藏子导航（正在编制中）
         if (mainIdx === 1) {
@@ -198,14 +198,15 @@ export function initUI() {
     function switchSubTab(subIdx, suppressAlert = false) {
         console.log(`[UI] Switching to sub-tab index: ${subIdx}`);
         
-        // 暂时只开通氨热泵模块（M7，索引4），其他模块显示维护中
-        if (subIdx !== 4) {
+        // 开通制冷热泵单级模块（M2，索引0）和氨热泵模块（M7，索引4），其他模块显示维护中
+        const enabledModules = [0, 4]; // M2和M7已开通
+        if (!enabledModules.includes(subIdx)) {
             // 只在用户主动点击时显示提示，初始化时不显示
             if (!suppressAlert) {
                 alert(i18next.t('nav.maintenance'));
             }
-            // 如果尝试切换到维护中的模块，自动切换到M7
-            subIdx = 4;
+            // 如果尝试切换到维护中的模块，自动切换到M2（默认）
+            subIdx = 0;
         }
         
         // 确保父容器 tab-content-refrig 是可见的
@@ -378,13 +379,17 @@ export function initUI() {
     });
 
     // 子标签事件监听
-    // 暂时只开通氨热泵模块（M7），其他模块显示维护中
+    // 开通制冷热泵单级模块（M2）和氨热泵模块（M7），其他模块显示维护中
+    const enabledSubTabs = ['sub-tab-btn-m2', 'sub-tab-btn-m7']; // M2和M7已开通
     subTabs.forEach((t, i) => {
         const btn = document.getElementById(t.btnId);
         if (btn) {
-            // M7是最后一个（索引4），只有它可用
-            if (t.btnId === 'sub-tab-btn-m7') {
+            // M2和M7可用
+            if (enabledSubTabs.includes(t.btnId)) {
                 btn.addEventListener('click', () => switchSubTab(i));
+                // 确保按钮可点击，移除禁用样式
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                btn.removeAttribute('title');
             } else {
                 // 其他模块禁用并显示维护中
                 btn.addEventListener('click', (e) => {
@@ -485,8 +490,9 @@ export function initUI() {
 
         // 如果是制冷热泵模式，切换到对应的子标签
         if (navInfo.mainIdx === 0 && navInfo.subIdx !== null) {
-            // 如果历史记录是维护中的模块，直接切换到M7，不显示alert
-            const targetSubIdx = (navInfo.subIdx !== 4) ? 4 : navInfo.subIdx;
+            // 如果历史记录是维护中的模块，直接切换到M2（默认），不显示alert
+            const enabledModules = [0, 4]; // M2和M7已开通
+            const targetSubIdx = enabledModules.includes(navInfo.subIdx) ? navInfo.subIdx : 0;
             setTimeout(() => switchSubTab(targetSubIdx, true), 50);
         }
         // 如果是气体压缩模式，切换到对应的子标签
@@ -589,11 +595,7 @@ export function initUI() {
     });
 
     // ECO Toggle Logic
-    const ecoCb = document.getElementById('enable_eco_m2');
-    if (ecoCb) ecoCb.addEventListener('change', () => {
-        document.getElementById('eco-settings-m2').classList.toggle('hidden', !ecoCb.checked);
-        document.getElementById('eco-placeholder-m2').classList.toggle('hidden', ecoCb.checked);
-    });
+    // 单级压缩：不使用经济器，移除相关UI逻辑
 
     // [New v7.2] SLHX Toggle Logic
     const slhxCb = document.getElementById('enable_slhx_m2');
@@ -602,47 +604,9 @@ export function initUI() {
         document.getElementById('slhx-placeholder-m2').classList.toggle('hidden', slhxCb.checked);
     });
 
-    setupRadioToggle('eco_type_m2', v => {
-        const subcoolerInputs = document.getElementById('eco-subcooler-inputs-m2');
-        if (subcoolerInputs) {
-            subcoolerInputs.classList.toggle('hidden', v !== 'subcooler');
-        }
-    });
+    // 单级压缩：不使用经济器，移除相关UI逻辑
 
-    // Smart Suggestion for Manual ECO Pressure
-    setupRadioToggle('eco_press_mode_m2', v => {
-        const e = document.getElementById('temp_eco_sat_m2');
-        if (!e) return;
-
-        if (v === 'auto') {
-            e.disabled = true;
-            e.value = '';
-            e.placeholder = 'Auto';
-            e.classList.add('opacity-50', 'bg-gray-100/50');
-        } else {
-            e.disabled = false;
-            e.classList.remove('opacity-50', 'bg-gray-100/50');
-
-            if (e.value === '') {
-                const Te = parseFloat(document.getElementById('temp_evap_m2').value) || 0;
-                const Tc = parseFloat(document.getElementById('temp_cond_m2').value) || 40;
-
-                const Te_K = Te + 273.15;
-                const Tc_K = Tc + 273.15;
-                const T_rec = Math.sqrt(Te_K * Tc_K) - 273.15;
-
-                e.value = T_rec.toFixed(1);
-            }
-            e.placeholder = 'e.g. ' + e.value;
-        }
-    });
-
-    setupRadioToggle('eff_mode_m2', v => {
-        const motorGroup = document.getElementById('motor-eff-group-m2');
-        const label = document.getElementById('eta_s_label_m2');
-        if (motorGroup) motorGroup.style.display = v === 'input' ? 'block' : 'none';
-        if (label) label.textContent = v === 'input' ? i18next.t('mode2.totalIsentropicEfficiency') : i18next.t('mode2.isentropicEfficiency');
-    });
+    // 单级压缩：只使用轴功率基准，移除效率模式切换逻辑
 
     // Mode 3: Gas Settings
     setupRadioToggle('flow_mode_m3', v => {
@@ -924,11 +888,11 @@ export function initUI() {
         btn.addEventListener('mouseleave', () => btn.classList.remove('scale-[0.98]'));
     });
 
-    // 初始化默认状态：显示制冷热泵模式的氨热泵模块（M7）
+    // 初始化默认状态：显示制冷热泵模式的单级模块（M2）
     // 首先调用切换函数确保状态一致
     switchMainTab(0);
-    // 切换到M7模块（索引4），初始化时不显示alert
-    switchSubTab(4, true);
+    // 切换到M2模块（索引0），初始化时不显示alert
+    switchSubTab(0, true);
     
     // 初始化气体压缩子标签：默认显示单级（但此时内容应该是隐藏的）
     // 注意：switchGasSubTab会显示tab-content-gas，所以需要在调用后再次隐藏
