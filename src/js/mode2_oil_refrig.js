@@ -9,7 +9,7 @@
 
 import { openMobileSheet } from './ui.js';
 import { updateFluidInfo } from './coolprop_loader.js';
-import { calculateEmpiricalEfficiencies, calculateReciprocatingVolumetricEfficiency } from './efficiency_models.js';
+import { calculateEmpiricalEfficiencies, calculateReciprocatingVolumetricEfficiency, calculateEfficiencies } from './efficiency_models.js';
 import { 
     createKpiCard, 
     createDetailRow, 
@@ -29,7 +29,9 @@ import {
     getFilteredSeriesByBrand,
     getModelsBySeries, 
     getDisplacementByModel,
-    getModelDetail
+    getModelDetail,
+    getDischargeTempLimits,
+    getDischargeTempLimitsByRefrigerant
 } from './compressor_models.js';
 import i18next from './i18n.js';
 
@@ -46,6 +48,8 @@ let slhxCheckbox, slhxEffInput;
 // Compressor Model Selectors
 let compressorBrandM2, compressorSeriesM2, compressorModelM2, modelDisplacementInfoM2, modelDisplacementValueM2;
 let flowM3hM2;
+// Cylinder Head Cooling (缸头冷却)
+let cylinderHeadCoolingEnabledM2, cylinderHeadWaterInletTempM2, cylinderHeadWaterOutletTempM2, cylinderHeadQM2;
 
 // Button States - 使用i18n
 const getBtnTextCalculate = () => i18next.t('mode2.calculatePerformance');
@@ -107,8 +111,15 @@ function updateAndDisplayEfficienciesM2() {
         
         if (!Pe_Pa || !Pc_Pa) return;
 
+        // 读取总过热度（用于计算吸气温度）
+        let total_superheat_K = parseFloat(document.getElementById('superheat_m2')?.value);
+        if (isNaN(total_superheat_K) || total_superheat_K < 0) {
+            total_superheat_K = 5; // 默认值
+        }
+        
         // RCC Pro: 使用活塞压缩机容积效率计算
-        const T_suc_K = Te_C + 273.15 + (parseFloat(document.getElementById('superheat_m2').value) || 5);
+        // 如果总过热=0，使用饱和温度；否则使用 Te_C + total_superheat_K
+        const T_suc_K = (total_superheat_K <= 0) ? (Te_C + 273.15) : (Te_C + 273.15 + total_superheat_K);
         
         // 尝试从选中的压缩机型号获取余隙容积
         let clearance_factor = 0.04; // 默认值
@@ -122,28 +133,27 @@ function updateAndDisplayEfficienciesM2() {
             }
         }
         
-        // 计算活塞压缩机容积效率
-        const eta_v = calculateReciprocatingVolumetricEfficiency(
-            Pc_Pa,
-            Pe_Pa,
-            clearance_factor,
-            null, // 使用 CoolProp 获取等熵指数
-            CP_INSTANCE,
-            fluid,
-            T_suc_K
-        );
-        
-        // 等熵效率：使用简化的活塞压缩机经验公式
+        // 计算压力比
         const pressureRatio = Pc_Pa / Pe_Pa;
-        // 活塞压缩机等熵效率通常为 0.70-0.80，随压力比变化
-        let eta_s = 0.80 - 0.01 * (pressureRatio - 3.0);
-        if (pressureRatio < 3.0) {
-            eta_s = 0.80 - 0.005 * (3.0 - pressureRatio);
-        }
-        eta_s = Math.max(0.65, Math.min(0.85, eta_s));
         
-        if (etaVM2) etaVM2.value = eta_v.toFixed(4);
-        if (etaSM2) etaSM2.value = eta_s.toFixed(3);
+        // 获取等熵指数 k (用于半经验公式)
+        let k_value = 1.3; // 默认值（氨的典型值）
+        try {
+            const Cp = CP_INSTANCE.PropsSI('CPMOLAR', 'T', T_suc_K, 'P', Pe_Pa, fluid);
+            const Cv = CP_INSTANCE.PropsSI('CVMOLAR', 'T', T_suc_K, 'P', Pe_Pa, fluid);
+            if (Cp && Cv && isFinite(Cp) && isFinite(Cv) && Cv > 0) {
+                k_value = Cp / Cv;
+            }
+        } catch (e) {
+            console.warn('[Mode2] Failed to get k value from CoolProp, using default 1.3');
+        }
+        
+        // 使用GEA Grasso半经验工程公式计算效率（针对高端压缩机优化）
+        // 传递实际的余隙容积值（从压缩机型号或默认值获取）
+        const efficiencies = calculateEfficiencies(pressureRatio, k_value, Tc_C, clearance_factor);
+        
+        if (etaVM2) etaVM2.value = efficiencies.eta_v.toFixed(4);
+        if (etaSM2) etaSM2.value = efficiencies.eta_is.toFixed(3);
 
     } catch (error) {
         console.warn("Auto-Eff Error (Ignored):", error.message);
@@ -455,9 +465,35 @@ function calculateMode2() {
             const fluid = fluidSelectM2.value;
             const Te_C = parseFloat(document.getElementById('temp_evap_m2').value);
             const Tc_C = parseFloat(document.getElementById('temp_cond_m2').value);
-            const superheat_K = parseFloat(document.getElementById('superheat_m2').value);
-            const subcooling_K = parseFloat(document.getElementById('subcooling_m2').value);
-            const motor_eff = parseFloat(document.getElementById('motor_eff_m2').value);
+            
+            // =========================================================
+            // 过热分析：区分有用过热和总过热
+            // =========================================================
+            // 注意：保留原始值用于判断饱和状态，不要强制改为0.01
+            let useful_superheat_K_raw = parseFloat(document.getElementById('useful_superheat_m2')?.value);
+            if (isNaN(useful_superheat_K_raw) || useful_superheat_K_raw < 0) useful_superheat_K_raw = 5; // 默认值
+            const useful_superheat_K = useful_superheat_K_raw; // 保留原始值，包括0
+            
+            let total_superheat_K_raw = parseFloat(document.getElementById('superheat_m2').value);
+            if (isNaN(total_superheat_K_raw) || total_superheat_K_raw < 0) {
+                // 如果总过热未输入或无效，默认等于有用过热
+                total_superheat_K_raw = useful_superheat_K_raw;
+            }
+            // 确保总过热 >= 有用过热（物理约束）
+            let total_superheat_K;
+            if (total_superheat_K_raw < useful_superheat_K) {
+                console.warn('[Mode2] 总过热小于有用过热，已自动调整为等于有用过热');
+                total_superheat_K = useful_superheat_K; // 调整为等于有用过热
+            } else {
+                total_superheat_K = total_superheat_K_raw; // 保留原始值，包括0
+            }
+            
+            // 计算管道过热（使用实际值，包括0）
+            const line_superheat_K = total_superheat_K - useful_superheat_K;
+            
+            let subcooling_K_raw = parseFloat(document.getElementById('subcooling_m2').value);
+            if (isNaN(subcooling_K_raw) || subcooling_K_raw < 0) subcooling_K_raw = 5; // 默认值
+            const subcooling_K = subcooling_K_raw; // 保留原始值，包括0（0表示饱和状态）
             
             // VSD Inputs
             const isVsdEnabled = vsdCheckboxM2.checked;
@@ -482,15 +518,46 @@ function calculateMode2() {
             const Pe_Pa = CP_INSTANCE.PropsSI('P', 'T', T_evap_K, 'Q', 1, fluid);
             const Pc_Pa = CP_INSTANCE.PropsSI('P', 'T', T_cond_K, 'Q', 1, fluid);
 
-            // Point 1: Evaporator Outlet (Base without SLHX)
-            const T_1_K = T_evap_K + superheat_K;
-            const h_1 = CP_INSTANCE.PropsSI('H', 'T', T_1_K, 'P', Pe_Pa, fluid);
-            // Reference Density at Evap Out (for SLHX shadow comparison)
-            const rho_1 = CP_INSTANCE.PropsSI('D', 'T', T_1_K, 'P', Pe_Pa, fluid); 
+            // Point 1a: Evaporator Outlet (基于有用过热)
+            let T_1a_K, h_1a;
+            if (useful_superheat_K <= 0) {
+                // 饱和状态：使用干度Q=1计算（更准确）
+                T_1a_K = T_evap_K; // 饱和温度
+                h_1a = CP_INSTANCE.PropsSI('H', 'P', Pe_Pa, 'Q', 1, fluid);
+            } else {
+                // 过热状态：使用温度计算
+                T_1a_K = T_evap_K + useful_superheat_K;
+                h_1a = CP_INSTANCE.PropsSI('H', 'T', T_1a_K, 'P', Pe_Pa, fluid);
+            }
+            
+            // Point 1: Compressor Suction (基于总过热)
+            let T_1_K, h_1, rho_1;
+            if (total_superheat_K <= 0) {
+                // 饱和状态：使用干度Q=1计算（更准确）
+                T_1_K = T_evap_K; // 饱和温度
+                h_1 = CP_INSTANCE.PropsSI('H', 'P', Pe_Pa, 'Q', 1, fluid);
+                rho_1 = CP_INSTANCE.PropsSI('D', 'P', Pe_Pa, 'Q', 1, fluid); // 饱和蒸气密度（较大）
+                console.log(`[Mode2 Debug] 总过热=0，使用饱和状态：rho_1=${rho_1.toFixed(3)} kg/m³`);
+            } else {
+                // 过热状态：使用温度计算
+                T_1_K = T_evap_K + total_superheat_K;
+                h_1 = CP_INSTANCE.PropsSI('H', 'T', T_1_K, 'P', Pe_Pa, fluid);
+                rho_1 = CP_INSTANCE.PropsSI('D', 'T', T_1_K, 'P', Pe_Pa, fluid); // 过热蒸气密度（较小）
+                console.log(`[Mode2 Debug] 总过热=${total_superheat_K.toFixed(1)}K，使用过热状态：rho_1=${rho_1.toFixed(3)} kg/m³`);
+            }
             
             // Point 3: Condenser Outlet
-            const T_3_K = T_cond_K - subcooling_K;
-            const h_3 = CP_INSTANCE.PropsSI('H', 'T', T_3_K, 'P', Pc_Pa, fluid); 
+            let T_3_K, h_3;
+            if (subcooling_K <= 0) {
+                // 饱和状态：使用干度Q=0计算（更准确）
+                T_3_K = T_cond_K; // 饱和温度
+                h_3 = CP_INSTANCE.PropsSI('H', 'P', Pc_Pa, 'Q', 0, fluid);
+                console.log(`[Mode2 Debug] 过冷度=0，使用饱和状态`);
+            } else {
+                // 过冷状态：使用温度计算
+                T_3_K = T_cond_K - subcooling_K;
+                h_3 = CP_INSTANCE.PropsSI('H', 'T', T_3_K, 'P', Pc_Pa, fluid);
+            } 
 
             // =========================================================
             // ITERATIVE SOLVER (SLHX & Suction Density)
@@ -512,7 +579,12 @@ function calculateMode2() {
             for (let iter = 0; iter < 5; iter++) {
                 // 1. Update Suction Properties
                 if (iter === 0) {
-                    s_suc = CP_INSTANCE.PropsSI('S', 'T', T_suc_K, 'P', Pe_Pa, fluid);
+                    // 熵值计算：如果总过热=0，使用饱和状态；否则使用温度计算
+                    if (total_superheat_K <= 0) {
+                        s_suc = CP_INSTANCE.PropsSI('S', 'P', Pe_Pa, 'Q', 1, fluid); // 饱和蒸气熵值
+                    } else {
+                        s_suc = CP_INSTANCE.PropsSI('S', 'T', T_suc_K, 'P', Pe_Pa, fluid);
+                    }
                 } else {
                     try {
                         rho_suc = CP_INSTANCE.PropsSI('D', 'H', h_suc, 'P', Pe_Pa, fluid);
@@ -633,22 +705,14 @@ function calculateMode2() {
             // =========================================================
             // Work & Finalization - 单级压缩
             // =========================================================
+            // RCC Pro: 重构功率计算 - 分离等熵效率和机械效率
+            // =========================================================
+            // Step A: 气体热力学（等熵效率决定气体行为）
             // 单级压缩：从吸气状态等熵压缩到排气压力
             const h_2s = CP_INSTANCE.PropsSI('H', 'P', Pc_Pa, 'S', s_suc, fluid);
-            const W_ideal_W = m_dot_suc * (h_2s - h_suc);
-
-            if (AppState.currentMode === AppState.MODES.GEOMETRY) {
-                // 单级压缩：只使用轴功率基准
-                W_shaft_W = W_ideal_W / eta_s_display;
-            } else {
-                if (W_shaft_W > 0) eta_s_display = W_ideal_W / W_shaft_W;
-            }
-
-            const Q_evap_W = m_dot_suc * (h_1 - h_liq_out); 
-            const W_input_W = W_shaft_W / motor_eff;
-
-            // RCC Pro: 活塞压缩机排气温度计算（基于等熵效率，单级压缩）
-            // 单级压缩：实际排气焓值 = h_suc + (h_2s - h_suc) / η_is
+            
+            // 等熵效率（ISENTROPIC_EFF）：决定实际排气焓值和温度
+            // 实际排气焓值 = h_suc + (h_2s - h_suc) / η_is
             const h_2a_final = h_suc + (h_2s - h_suc) / eta_s_display;
             const T_2a_final_K = CP_INSTANCE.PropsSI('T', 'P', Pc_Pa, 'H', h_2a_final, fluid);
             const T_2a_final_C = T_2a_final_K - 273.15;
@@ -658,14 +722,243 @@ function calculateMode2() {
                 console.warn(`[RCC Pro] 排气温度 ${T_2a_final_C.toFixed(1)}°C 超过 150°C，建议检查输入参数或降低压比`);
             }
             
-            // 活塞压缩机无油冷，Q_oil_W = 0
-            const Q_oil_W = 0;
+            // 气体功率（Gas Power）：压缩气体所需的功率
+            const P_gas_W = m_dot_suc * (h_2a_final - h_suc);
+            
+            // Step B: 轴功率计算（机械效率决定摩擦损失）
+            // 机械效率（MECHANICAL_EFF）：决定摩擦损失，影响轴功率
+            // 轴功率 = 气体功率 / 机械效率
+            const MECHANICAL_EFF = 0.95; // 机械效率（基于高能效要求）
+            
+            if (AppState.currentMode === AppState.MODES.GEOMETRY) {
+                // 几何模式：从气体功率计算轴功率
+                W_shaft_W = P_gas_W / MECHANICAL_EFF;
+            } else {
+                // 多项式模式：从轴功率反推等熵效率
+                if (W_shaft_W > 0) {
+                    // 从轴功率反推气体功率
+                    const P_gas_calculated = W_shaft_W * MECHANICAL_EFF;
+                    // 从气体功率反推等熵效率
+                    const h_2a_calculated = h_suc + P_gas_calculated / m_dot_suc;
+                    // 计算等熵效率：η_is = (h_2s - h_suc) / (h_2a - h_suc)
+                    const delta_h_ideal = h_2s - h_suc;
+                    const delta_h_actual = h_2a_calculated - h_suc;
+                    if (delta_h_actual > 0) {
+                        eta_s_display = delta_h_ideal / delta_h_actual;
+                    }
+                }
+            }
+            
+            // Step C: 油冷负荷计算（摩擦热）
+            // 摩擦热 = 轴功率 - 气体功率
+            // 这是机械损失，必须由油冷系统带走
+            const isOilCoolerEnabled = true; // 始终启用，因为摩擦热总是存在
+            const Q_oil_W = W_shaft_W - P_gas_W; // 摩擦热 = 轴功率 - 气体功率
+            
+            // 制冷量计算：使用有用过热度对应的焓值（h_1a）而不是总过热度（h_1）
+            // 有用过热计入制冷量，管道过热不计入
+            const Q_evap_W = m_dot_suc * (h_1a - h_liq_out); 
+            // RCC Pro: 压缩机计算只使用轴功率，不使用输入功率
+            // 输入功率 = 轴功率 / 电机效率，但本 app 专注于压缩机性能，只显示轴功率
+            
+            // =========================================================
+            // RCC Pro: 缸头冷却负荷计算（可选/条件性）
+            // =========================================================
+            // 缸头冷却是可选功能，用于降低排气温度
+            // 根据GEA实际情况：冷却负荷约4%轴功率，可降低排气温度约15°C
+            let Q_cylinder_head_W = 0;
+            let T_2a_after_head_cooling_C = T_2a_final_C; // 缸头冷却后的排气温度
+            let cylinderHeadCoolingError = null; // 安全检查错误
+            const CYLINDER_HEAD_COOLING_FACTOR = 0.04; // 缸头冷却可带走4%轴功率（根据GEA实际情况）
+            const CYLINDER_HEAD_TEMP_REDUCTION = 15; // °C，缸头冷却可降低的排气温度
+            // 缸头冷却计算模式：
+            // - 'fixed_power': 固定按轴功率百分比带走热量（默认4%）
+            // - 'target_dt'  : 优先满足目标温降（默认15°C），由此计算所需负荷（确保能量守恒）
+            const CYLINDER_HEAD_COOLING_MODE = 'target_dt';
+            
+            // 读取缸头冷却配置
+            const isCylinderHeadCoolingEnabled = cylinderHeadCoolingEnabledM2?.checked || false;
+            
+            // 调试信息
+            if (isCylinderHeadCoolingEnabled) {
+                console.log('[RCC Pro] 缸头冷却已启用');
+            }
+            
+            if (isCylinderHeadCoolingEnabled) {
+                // 读取缸头冷却水参数
+                const T_head_water_in = parseFloat(cylinderHeadWaterInletTempM2?.value) || 30;
+                const T_head_water_out = parseFloat(cylinderHeadWaterOutletTempM2?.value) || 35;
+                
+                // =========================================================
+                // 安全检查：防止液击（Liquid Hammer）
+                // =========================================================
+                // 关键安全规则：进水温度必须 > (蒸发温度 + 10K)
+                // 如果水温太低，会导致吸气腔内结露甚至液化，引发严重的液击风险
+                const min_head_water_temp = Te_C + 10; // 最小允许进水温度
+                
+                // 验证出水温度必须大于进水温度
+                if (T_head_water_out <= T_head_water_in) {
+                    // 出水温度无效：显示错误
+                    cylinderHeadCoolingError = `缸头冷却出水温度 (${T_head_water_out.toFixed(1)}°C) 必须大于进水温度 (${T_head_water_in.toFixed(1)}°C)。`;
+                    console.error(`[RCC Pro] ${cylinderHeadCoolingError}`);
+                    console.log(`[RCC Pro] 缸头冷却参数无效，不启用缸头冷却`);
+                    // 如果参数无效，不启用缸头冷却
+                    T_2a_after_head_cooling_C = T_2a_final_C; // 保持原始排气温度
+                } else if (T_head_water_in < min_head_water_temp) {
+                    // 安全检查失败：显示错误
+                    cylinderHeadCoolingError = `液击风险！缸头冷却进水温度 (${T_head_water_in.toFixed(1)}°C) 过低。必须 > ${min_head_water_temp.toFixed(1)}°C (蒸发温度 + 10K) 以防止吸气腔结露。`;
+                    console.error(`[RCC Pro] ${cylinderHeadCoolingError}`);
+                    console.log(`[RCC Pro] 缸头冷却安全检查失败，不启用缸头冷却`);
+                    // 如果安全检查失败，不启用缸头冷却
+                    T_2a_after_head_cooling_C = T_2a_final_C; // 保持原始排气温度
+                } else {
+                    // 安全检查通过，计算缸头冷却负荷
+                    if (CYLINDER_HEAD_COOLING_MODE === 'target_dt') {
+                        // 目标温降模式：根据目标温降计算所需负荷（能量守恒）
+                        const T_target_C = Math.max(T_2a_final_C - CYLINDER_HEAD_TEMP_REDUCTION, Te_C + 20);
+                        const T_target_K = T_target_C + 273.15;
+                        const h_target = CP_INSTANCE.PropsSI('H', 'T', T_target_K, 'P', Pc_Pa, fluid);
+                        const delta_h = Math.max(0, h_2a_final - h_target); // J/kg
+                        Q_cylinder_head_W = m_dot_suc * delta_h; // J/s = W
+                        const implied_factor = W_shaft_W > 0 ? (Q_cylinder_head_W / W_shaft_W) : 0;
+                        console.log(`[RCC Pro] 缸头冷却（目标温降模式）:`);
+                        console.log(`  目标温降: ${CYLINDER_HEAD_TEMP_REDUCTION} °C, 目标排气温度: ${T_target_C.toFixed(1)} °C`);
+                        console.log(`  计算所需负荷: ${(Q_cylinder_head_W/1000).toFixed(2)} kW (约 ${(implied_factor*100).toFixed(1)}% 轴功率)`);
+                    } else {
+                        // 固定功率模式：按轴功率百分比带走热量
+                        Q_cylinder_head_W = W_shaft_W * CYLINDER_HEAD_COOLING_FACTOR;
+                        console.log(`[RCC Pro] 缸头冷却（固定功率模式）: 负荷 ${(Q_cylinder_head_W/1000).toFixed(2)} kW (${(CYLINDER_HEAD_COOLING_FACTOR*100).toFixed(0)}% 轴功率)`);
+                    }
+                    
+                    // 注意：实际的温度降低量将在后续根据能量守恒计算（见 h_2a_after_head_cooling 计算）
+                }
+            } else {
+                console.log('[RCC Pro] 缸头冷却未启用');
+            }
+            
+            // 计算缸头冷却后的排气状态（能量守恒）
+            let h_2a_after_head_cooling = h_2a_final;
+            if (isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError && Q_cylinder_head_W > 0) {
+                // 正确的能量守恒：h_2a_after_head_cooling = h_2a_final - (Q_cylinder_head / m_dot)
+                const h_reduction_per_kg = Q_cylinder_head_W / m_dot_suc; // J/kg
+                h_2a_after_head_cooling = h_2a_final - h_reduction_per_kg;
+                
+                // 计算实际排气温度降低量
+                try {
+                    const T_2a_after_head_K = CP_INSTANCE.PropsSI('T', 'H', h_2a_after_head_cooling, 'P', Pc_Pa, fluid);
+                    T_2a_after_head_cooling_C = T_2a_after_head_K - 273.15;
+                    
+                    // 验证能量守恒
+                    const h_diff_from_energy = h_2a_final - h_2a_after_head_cooling;
+                    const h_diff_expected = Q_cylinder_head_W / m_dot_suc;
+                    const temp_reduction_actual = T_2a_final_C - T_2a_after_head_cooling_C;
+                    console.log(`[RCC Pro] 缸头冷却能量守恒验证: 焓降=${(h_diff_from_energy/1000).toFixed(1)} kJ/kg (期望=${(h_diff_expected/1000).toFixed(1)} kJ/kg), 实际温降=${temp_reduction_actual.toFixed(1)}°C`);
+                } catch (e) {
+                    console.warn(`[RCC Pro] 计算缸头冷却后排气温度失败: ${e.message}`);
+                    h_2a_after_head_cooling = h_2a_final;
+                    // T_2a_after_head_cooling_C 已在前面初始化为 T_2a_final_C，无需重新赋值
+                }
+            }
+            
+            // 如果启用了缸头冷却，显示实际的温度降低效果
+            if (isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError && Q_cylinder_head_W > 0) {
+                const actual_temp_reduction = T_2a_final_C - T_2a_after_head_cooling_C;
+                console.log(`[RCC Pro] 缸头冷却效果：`);
+                console.log(`  原始排气温度: ${T_2a_final_C.toFixed(1)}°C`);
+                console.log(`  修正后排气温度: ${T_2a_after_head_cooling_C.toFixed(1)}°C`);
+                console.log(`  实际温度降低: ${actual_temp_reduction.toFixed(1)}°C`);
+            }
+            
+            // =========================================================
+            // RCC Pro: 排气温度限制检查（基于修正后的排气温度）
+            // =========================================================
+            // 注意：如果启用缸头冷却，使用修正后的排气温度进行检查
+            let dischargeTempWarning = null;
+            let dischargeTempError = null;
+            let isOperatingPointInvalid = false;
+            
+            // 使用修正后的排气温度（如果启用缸头冷却）
+            const T_discharge_actual_C = (isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError && Q_cylinder_head_W > 0) 
+                ? T_2a_after_head_cooling_C 
+                : T_2a_final_C;
+            
+            // 优先使用制冷剂类型的限制（主要限制，基于润滑油分解温度）
+            const fluidLimits = getDischargeTempLimitsByRefrigerant(fluid);
+            
+            // 获取压缩机系列的排气温度限制（补充限制，基于硬件设计）
+            const brand = compressorBrandM2?.value;
+            const series = compressorSeriesM2?.value;
+            const seriesLimits = getDischargeTempLimits(brand, series);
+            
+            // 确定有效的温度限制（取两者中的较小值，或使用系列限制如果是热泵系列）
+            const isHeatPumpSeries = series && (
+                series.includes('HP') || 
+                series.includes('XHP')
+            );
+            
+            let effectiveWarning, effectiveMax;
+            if (isHeatPumpSeries && seriesLimits) {
+                // 热泵系列：优先使用系列限制（设计用于更高温度工况）
+                effectiveWarning = seriesLimits.warning;
+                effectiveMax = seriesLimits.trip;
+                console.log(`[RCC Pro] 使用热泵系列温度限制: 警告=${effectiveWarning}°C, 最大=${effectiveMax}°C (系列: ${series})`);
+            } else {
+                // 标准系列：使用更严格的限制（取两者中的较小值）
+                effectiveWarning = seriesLimits ? Math.min(fluidLimits.warn, seriesLimits.warning) : fluidLimits.warn;
+                effectiveMax = seriesLimits ? Math.min(fluidLimits.max, seriesLimits.trip) : fluidLimits.max;
+            }
+            
+            // 检查排气温度
+            if (T_discharge_actual_C > effectiveMax) {
+                dischargeTempError = `排气温度 ${T_discharge_actual_C.toFixed(1)}°C 超过最大允许值 ${effectiveMax}°C。必须降低压比或启用缸头冷却。`;
+                isOperatingPointInvalid = true;
+                console.error(`[RCC Pro] ${dischargeTempError}`);
+            } else if (T_discharge_actual_C > effectiveWarning) {
+                dischargeTempWarning = `排气温度 ${T_discharge_actual_C.toFixed(1)}°C 超过警告值 ${effectiveWarning}°C，建议检查输入参数或启用缸头冷却。`;
+                console.warn(`[RCC Pro] ${dischargeTempWarning}`);
+            }
+            
+            // 如果启用了缸头冷却，在警告/错误信息中显示原始排气温度
+            if (isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError && Q_cylinder_head_W > 0 && T_2a_final_C !== T_2a_after_head_cooling_C) {
+                if (dischargeTempError) {
+                    dischargeTempError += ` (原始排气温度: ${T_2a_final_C.toFixed(1)}°C，缸头冷却后: ${T_2a_after_head_cooling_C.toFixed(1)}°C)`;
+                }
+                if (dischargeTempWarning) {
+                    dischargeTempWarning += ` (原始排气温度: ${T_2a_final_C.toFixed(1)}°C，缸头冷却后: ${T_2a_after_head_cooling_C.toFixed(1)}°C)`;
+                }
+            }
+            
             // 单级压缩：冷凝器负荷 = 质量流量 × (排气焓 - 冷凝器出口焓)
-            const Q_cond_W = m_dot_suc * (h_2a_final - h_3);
-            const Q_heating_total_W = Q_cond_W;
+            // 如果启用缸头冷却，使用修正后的排气焓值
+            const h_2_for_cond = (isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError && Q_cylinder_head_W > 0)
+                ? h_2a_after_head_cooling
+                : h_2a_final;
+            // 单级压缩：冷凝器负荷 = 质量流量 × (排气焓 - 冷凝器出口焓)
+            // 如果启用缸头冷却，使用修正后的排气焓值
+            // 注意：如果启用了 SLHX，h_liq_out < h_3，但冷凝器负荷仍应使用 h_3（冷凝器出口）
+            const Q_cond_W = m_dot_suc * (h_2_for_cond - h_3);
+            
+            // =========================================================
+            // 总排热量计算：使用能量守恒原理
+            // =========================================================
+            // 能量守恒：总排热量 = 制冷量 + 轴功率
+            // 注意：摩擦热已包含在轴功率中，不应重复计算
+            // 总排热量 = 冷凝器排热 + 摩擦热（油冷）+ 缸头冷却排热
+            const Q_heating_total_W = Q_evap_W + W_shaft_W;
+            
+            // 验证：总排热量应该等于各分项之和
+            const Q_heating_expected = Q_cond_W + Q_oil_W + Q_cylinder_head_W;
+            const balance_error = Math.abs(Q_heating_total_W - Q_heating_expected);
+            const balance_error_percent = Q_heating_expected > 0 ? (balance_error / Q_heating_expected) * 100 : 0;
+            if (balance_error_percent > 0.1) { // 如果误差超过0.1%，记录警告
+                console.warn(`[RCC Pro] 热平衡误差: ${(balance_error/1000).toFixed(2)} kW (${balance_error_percent.toFixed(2)}%)`);
+                console.warn(`  总排热量（能量守恒）: ${(Q_heating_total_W/1000).toFixed(2)} kW = 制冷量 ${(Q_evap_W/1000).toFixed(2)} kW + 轴功率 ${(W_shaft_W/1000).toFixed(2)} kW`);
+                console.warn(`  总排热量（分项求和）: ${(Q_heating_expected/1000).toFixed(2)} kW = 冷凝器 ${(Q_cond_W/1000).toFixed(2)} kW + 摩擦热 ${(Q_oil_W/1000).toFixed(2)} kW + 缸头冷却 ${(Q_cylinder_head_W/1000).toFixed(2)} kW`);
+            }
 
-            const COP_R = Q_evap_W / W_input_W;
-            const COP_H = Q_heating_total_W / W_input_W;
+            // COP 计算：使用轴功率（压缩机性能指标）
+            const COP_R = Q_evap_W / W_shaft_W;
+            const COP_H = Q_heating_total_W / W_shaft_W;
 
             // =========================================================
             // SHADOW CALCULATION (Benefit Analysis) - v7.4.2
@@ -676,7 +969,8 @@ function calculateMode2() {
             let slhxSelection = null;
             if (isSlhxEnabled) {
                 const m_dot_base = m_dot_suc * (rho_1 / rho_suc);
-                const q_cool_base = m_dot_base * (h_1 - h_liq_in);
+                // 基准制冷量也使用有用过热度对应的焓值
+                const q_cool_base = m_dot_base * (h_1a - h_liq_in);
                 
                 // Recalculate base work with original suction state (单级压缩)
                 const s_1 = CP_INSTANCE.PropsSI('S', 'H', h_1, 'P', Pe_Pa, fluid);
@@ -684,10 +978,10 @@ function calculateMode2() {
                 const w_ideal_base = m_dot_base * (h_2s_base - h_1);
                 const w_shaft_base = w_ideal_base / eta_s_display;
 
-                const w_in_base = w_shaft_base / motor_eff;
+                // 使用轴功率计算基准 COP（压缩机性能指标）
                 const q_heat_base = q_cool_base + w_shaft_base;
-                const cop_c_base = q_cool_base / w_in_base;
-                const cop_h_base = q_heat_base / w_in_base;
+                const cop_c_base = q_cool_base / w_shaft_base;
+                const cop_h_base = q_heat_base / w_shaft_base;
 
                 const slhxData = {
                     Qc: { val: (Q_evap_W/1000).toFixed(2), diff: ((Q_evap_W - q_cool_base)/q_cool_base)*100 },
@@ -758,7 +1052,11 @@ function calculateMode2() {
             
             const pt1 = point('1', h_1, Pe_Pa, 'bottom');
             const pt1_p = point("1'", h_suc, Pe_Pa, 'bottom'); 
-            const pt2 = point('2', h_2a_final, Pc_Pa, 'top');
+            // 如果启用缸头冷却，使用修正后的排气焓值（用于图表显示）
+            const h_2_display_chart = (isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError && Q_cylinder_head_W > 0)
+                ? h_2a_after_head_cooling
+                : h_2a_final;
+            const pt2 = point('2', h_2_display_chart, Pc_Pa, 'top');
             const pt3 = point('3', h_3, Pc_Pa, 'top');
             const pt4 = point('4', h_liq_out, Pe_Pa, 'bottom'); 
             
@@ -823,8 +1121,19 @@ function calculateMode2() {
                 statePoints.push({ name: "1'", desc: 'Comp In (SLHX)', temp: (T_suc_K-273.15).toFixed(1), press: (Pe_Pa/1e5).toFixed(2), enth: (h_suc/1000).toFixed(1), flow: m_dot_suc.toFixed(3) });
             }
             
+            // 确定显示用的排气温度和焓值（如果启用缸头冷却，使用修正后的值）
+            const T_2_display_C = (isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError && Q_cylinder_head_W > 0) 
+                ? T_2a_after_head_cooling_C 
+                : T_2a_final_C;
+            const h_2_display_state = (isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError && Q_cylinder_head_W > 0)
+                ? h_2a_after_head_cooling
+                : h_2a_final;
+            const desc_2 = (isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError && Q_cylinder_head_W > 0)
+                ? 'Discharge (After Head Cooling)'
+                : 'Discharge';
+            
             statePoints.push(
-                { name: '2', desc: 'Discharge', temp: T_2a_final_C.toFixed(1), press: (Pc_Pa/1e5).toFixed(2), enth: (h_2a_final/1000).toFixed(1), flow: m_dot_suc.toFixed(3) },
+                { name: '2', desc: desc_2, temp: T_2_display_C.toFixed(1), press: (Pc_Pa/1e5).toFixed(2), enth: (h_2_display_state/1000).toFixed(1), flow: m_dot_suc.toFixed(3) },
                 { name: '3', desc: 'Cond Out', temp: (T_3_K-273.15).toFixed(1), press: (Pc_Pa/1e5).toFixed(2), enth: (h_3/1000).toFixed(1), flow: m_dot_suc.toFixed(3) }
             );
             
@@ -847,16 +1156,53 @@ function calculateMode2() {
             const displayEtaV = eta_v_display !== null ? eta_v_display.toFixed(3) : "---";
             const displayEtaS = eta_s_display !== null ? eta_s_display.toFixed(3) : "---";
 
+            // 生成错误和警告提示HTML
+            let cylinderHeadCoolingAlertHtml = '';
+            if (cylinderHeadCoolingError) {
+                cylinderHeadCoolingAlertHtml = `
+                    <div class="bg-red-50 border-l-4 border-red-500 p-4 mb-4 rounded-r-lg">
+                        <div class="flex items-start">
+                            <div class="flex-shrink-0">
+                                <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                                </svg>
+                            </div>
+                            <div class="ml-3 flex-1">
+                                <div class="text-sm font-bold text-red-800 mb-2">${cylinderHeadCoolingError}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            let dischargeTempAlertHtml = '';
+            if (dischargeTempError) {
+                dischargeTempAlertHtml = `
+                    <div class="bg-red-50 border-l-4 border-red-500 p-4 mb-4 rounded-r-lg">
+                        <div class="text-sm font-bold text-red-800">${dischargeTempError}</div>
+                    </div>
+                `;
+            } else if (dischargeTempWarning) {
+                dischargeTempAlertHtml = `
+                    <div class="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-4 rounded-r-lg">
+                        <div class="text-sm font-bold text-yellow-800">${dischargeTempWarning}</div>
+                    </div>
+                `;
+            }
+            
             let html = `
+                ${cylinderHeadCoolingAlertHtml}
+                ${dischargeTempAlertHtml}
                 <div class="grid grid-cols-2 gap-4 mb-6">
                     ${createKpiCard(i18next.t('components.coolingCapacity'), (Q_evap_W/1000).toFixed(2), 'kW', `COP: ${COP_R.toFixed(2)}`, 'blue')}
                     ${createKpiCard(i18next.t('components.heatingCapacity'), (Q_heating_total_W/1000).toFixed(2), 'kW', `COP: ${COP_H.toFixed(2)}`, 'orange')}
                 </div>
                 <div class="space-y-1 bg-white/40 p-4 rounded-2xl border border-white/50 shadow-inner">
                     ${createSectionHeader(i18next.t('components.powerAndEfficiency'))}
-                    ${createDetailRow(i18next.t('mode2.inputPower'), `${(W_input_W/1000).toFixed(2)} kW`, true)}
-                    ${createDetailRow(i18next.t('components.shaftPower'), `${(W_shaft_W/1000).toFixed(2)} kW`)}
-                    ${createDetailRow('Oil Load', `${(Q_oil_W/1000).toFixed(2)} kW`)}
+                    ${createDetailRow(i18next.t('components.shaftPower'), `${(W_shaft_W/1000).toFixed(2)} kW`, true)}
+                    ${createDetailRow('润滑系统摩擦热 (Friction Heat)', `${(Q_oil_W/1000).toFixed(2)} kW (机械损失)`, false)}
+                    ${Q_cylinder_head_W > 0 ? createDetailRow('缸头冷却负荷 (Cylinder Head Cooling)', `${(Q_cylinder_head_W/1000).toFixed(2)} kW (低品位排热，温度约30-50°C)`, true) : ''}
+                    ${isCylinderHeadCoolingEnabled && Q_cylinder_head_W > 0 ? createDetailRow('缸头冷却后排气温度', `${T_2a_after_head_cooling_C.toFixed(1)} °C (降低 ${(T_2a_final_C - T_2a_after_head_cooling_C).toFixed(1)}°C)`) : ''}
                     ${createDetailRow('Calc Logic', efficiency_info_text)}
                     ${createDetailRow('Volumetric Eff (η_v)', displayEtaV, AppState.currentMode === 'polynomial')}
                     ${createDetailRow('Isentropic Eff (η_s)', displayEtaS, AppState.currentMode === 'polynomial')}
@@ -865,6 +1211,13 @@ function calculateMode2() {
 
                     ${slhxHtml}
 
+                    ${createSectionHeader('过热分析', '🌡️')}
+                    <div class="text-xs text-gray-600 space-y-1 mb-3">
+                        <div>• <strong>有用过热</strong>: ${useful_superheat_K.toFixed(1)} K (蒸发器内过热，计入制冷量)</div>
+                        <div>• <strong>总过热</strong>: ${total_superheat_K.toFixed(1)} K (压缩机吸气口过热)</div>
+                        ${line_superheat_K > 0 ? `<div>• <strong>管道过热</strong>: ${line_superheat_K.toFixed(1)} K (管道中获得的过热)</div>` : ''}
+                    </div>
+                    
                     ${createSectionHeader('State Points Detail', '📊')}
                     ${createStateTable(statePoints)}
                     
@@ -887,6 +1240,7 @@ function calculateMode2() {
             lastCalculationData.Q_evap_W = Q_evap_W;
             lastCalculationData.Q_cond_W = Q_cond_W;
             lastCalculationData.Q_oil_W = Q_oil_W;
+            lastCalculationData.Q_cylinder_head_W = Q_cylinder_head_W;
             
             AppState.updateVSD(isVsdEnabled, ratedRpm, currentRpm);
             AppState.updateSLHX(isSlhxEnabled, slhxEff);
@@ -938,6 +1292,12 @@ export function initMode2(CP) {
     modelDisplacementInfoM2 = document.getElementById('model_displacement_info_m2');
     modelDisplacementValueM2 = document.getElementById('model_displacement_value_m2');
     flowM3hM2 = document.getElementById('flow_m3h_m2');
+    
+    // Cylinder Head Cooling (缸头冷却)
+    cylinderHeadCoolingEnabledM2 = document.getElementById('cylinder_head_cooling_enabled_m2');
+    cylinderHeadWaterInletTempM2 = document.getElementById('cylinder_head_water_inlet_temp_m2');
+    cylinderHeadWaterOutletTempM2 = document.getElementById('cylinder_head_water_outlet_temp_m2');
+    cylinderHeadQM2 = document.getElementById('cylinder_head_q_m2');
 
     // Initialize compressor model selectors
     if (compressorBrandM2 && compressorSeriesM2 && compressorModelM2) {
@@ -957,6 +1317,16 @@ export function initMode2(CP) {
         [tempEvapM2, tempCondM2, autoEffCheckboxM2].forEach(el => {
             if(el) el.addEventListener('change', updateAndDisplayEfficienciesM2);
         });
+        
+        // 添加有用过热度与总过热度输入框的事件监听，以便自动更新效率
+        const usefulSuperheatInputM2 = document.getElementById('useful_superheat_m2');
+        const superheatInputM2 = document.getElementById('superheat_m2');
+        if (usefulSuperheatInputM2) {
+            usefulSuperheatInputM2.addEventListener('change', updateAndDisplayEfficienciesM2);
+        }
+        if (superheatInputM2) {
+            superheatInputM2.addEventListener('change', updateAndDisplayEfficienciesM2);
+        }
 
         if (vsdCheckboxM2) {
             vsdCheckboxM2.addEventListener('change', () => {
@@ -977,6 +1347,18 @@ export function initMode2(CP) {
                 }
             });
         });
+        
+        // Cylinder Head Cooling toggle
+        if (cylinderHeadCoolingEnabledM2) {
+            cylinderHeadCoolingEnabledM2.addEventListener('change', () => {
+                const isEnabled = cylinderHeadCoolingEnabledM2.checked;
+                const settingsDiv = document.getElementById('cylinder-head-cooling-settings-m2');
+                const placeholderDiv = document.getElementById('cylinder-head-cooling-placeholder-m2');
+                if (settingsDiv) settingsDiv.classList.toggle('hidden', !isEnabled);
+                if (placeholderDiv) placeholderDiv.classList.toggle('hidden', isEnabled);
+                setButtonStale2();
+            });
+        }
 
         if (printButtonM2) printButtonM2.addEventListener('click', printReportMode2);
         

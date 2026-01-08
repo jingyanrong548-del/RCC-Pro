@@ -205,6 +205,120 @@ export const COMPRESSOR_MODELS = {
                 clearance_factor: 0.045,
                 refrigerants: ['R717']
             }
+        ],
+        'Grasso V HS (25 bar High Speed)': [
+            {
+                model: 'V 300-2 HS',
+                displacement: 348,
+                swept_volume_max_m3h: 348,
+                cylinders: 4,
+                max_rpm: 1800,
+                rpm_range: [500, 1800],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            },
+            {
+                model: 'V 450-2 HS',
+                displacement: 522,
+                swept_volume_max_m3h: 522,
+                cylinders: 6,
+                max_rpm: 1800,
+                rpm_range: [500, 1800],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            },
+            {
+                model: 'V 600-2 HS',
+                displacement: 696,
+                swept_volume_max_m3h: 696,
+                cylinders: 8,
+                max_rpm: 1800,
+                rpm_range: [500, 1800],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            },
+            {
+                model: 'V 700-2 HS',
+                displacement: 764,
+                swept_volume_max_m3h: 764,
+                cylinders: 4,
+                max_rpm: 1800,
+                rpm_range: [500, 1800],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            },
+            {
+                model: 'V 1100-2 HS',
+                displacement: 1146,
+                swept_volume_max_m3h: 1146,
+                cylinders: 6,
+                max_rpm: 1800,
+                rpm_range: [500, 1800],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            },
+            {
+                model: 'V 1400-2 HS',
+                displacement: 1528,
+                swept_volume_max_m3h: 1528,
+                cylinders: 8,
+                max_rpm: 1800,
+                rpm_range: [500, 1800],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            },
+            {
+                model: 'V 1800-2 HS',
+                displacement: 1991,
+                swept_volume_max_m3h: 1991,
+                cylinders: 10,
+                max_rpm: 1500,
+                rpm_range: [500, 1500],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            }
+        ],
+        'Grasso V CM (25 bar Large Series)': [
+            {
+                model: 'V 700 CM',
+                displacement: 530,
+                swept_volume_max_m3h: 530,
+                cylinders: 4,
+                max_rpm: 1000,
+                rpm_range: [500, 1000],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            },
+            {
+                model: 'V 1100 CM',
+                displacement: 795,
+                swept_volume_max_m3h: 795,
+                cylinders: 6,
+                max_rpm: 1000,
+                rpm_range: [500, 1000],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            },
+            {
+                model: 'V 1400 CM',
+                displacement: 1060,
+                swept_volume_max_m3h: 1060,
+                cylinders: 8,
+                max_rpm: 1000,
+                rpm_range: [500, 1000],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            },
+            {
+                model: 'V 1800 CM',
+                displacement: 1325,
+                swept_volume_max_m3h: 1325,
+                cylinders: 10,
+                max_rpm: 1000,
+                rpm_range: [500, 1000],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            }
         ]
     },
     'MYCOM': {
@@ -415,30 +529,59 @@ export const DISCHARGE_TEMP_LIMITS_BY_REFRIGERANT = {
  * - 热泵工况下，压缩机设计用于更高温度，系列限制通常更宽松
  */
 export const DISCHARGE_TEMP_LIMITS = {
-    // Standard V Series (NH3) - 标准氨系列 (25 bar)
-    // 用于标准制冷工况，温度限制较保守
+    // =========================================================
+    // GEA Grasso 活塞压缩机排气温度限制（根据GEA实际情况）
+    // =========================================================
+    
+    // 1. Grasso V (25 bar) - 标准氨系列
+    // 设计压力：25 bar，用于标准制冷工况
+    // 根据GEA服务手册：标准氨制冷工况下，排气温度应控制在140°C以下，绝对限制150°C
     'Grasso V (25 bar)': {
-        warning: 140,  // °C - 标准氨制冷工况警告温度
-        trip: 150      // °C - 标准氨制冷工况跳闸温度
+        warning: 140,  // °C - 标准氨制冷工况警告温度（超过此温度建议检查工况或启用缸头冷却）
+        trip: 150      // °C - 标准氨制冷工况跳闸温度（绝对限制，超过此温度存在润滑油分解风险）
     },
-    // V HP Series (Heat Pump) - 热泵系列 (39 bar)
-    // 注意：系列名称必须与COMPRESSOR_MODELS中的完全一致
-    // 根据GEA资料，V HP系列设计用于热泵应用，可承受更高排气温度
+    
+    // 2. Grasso V HS (25 bar High Speed) - 高速系列
+    // 设计压力：25 bar，高速运行（最高1800 RPM），但压力等级与标准V系列相同
+    // 虽然转速更高，但温度限制基于设计压力和材料，与标准V系列相同
+    'Grasso V HS (25 bar High Speed)': {
+        warning: 140,  // °C - 标准氨制冷工况警告温度（与标准V系列相同，基于25 bar设计压力）
+        trip: 150      // °C - 标准氨制冷工况跳闸温度（与标准V系列相同）
+    },
+    
+    // 3. Grasso V CM (25 bar Large Series) - 大型系列
+    // 设计压力：25 bar，大型压缩机（低转速，最高1000 RPM），压力等级与标准V系列相同
+    // 虽然尺寸更大，但温度限制基于设计压力，与标准V系列相同
+    'Grasso V CM (25 bar Large Series)': {
+        warning: 140,  // °C - 标准氨制冷工况警告温度（与标准V系列相同，基于25 bar设计压力）
+        trip: 150      // °C - 标准氨制冷工况跳闸温度（与标准V系列相同）
+    },
+    
+    // 4. Grasso V HP (39 bar Heat Pump) - 热泵系列
+    // 设计压力：39 bar，专门设计用于热泵应用
+    // 根据GEA技术资料：V HP系列设计用于更高温度工况，可承受更高排气温度
+    // 热泵工况下，压缩机设计考虑了更高温度运行，材料和处理工艺相应提升
     'Grasso V HP (39 bar Heat Pump)': {
         warning: 150,  // °C - 热泵工况警告温度（根据GEA技术资料，V HP系列设计用于更高温度工况）
         trip: 160      // °C - 热泵工况跳闸温度（绝对限制，超过此温度存在严重风险）
     },
-    // V XHP Series (High Temp) - 高温系列 (63 bar)
-    // 根据GEA资料，XHP系列最高供水温度可达95°C，对应排气温度更高
+    
+    // 5. Grasso V XHP (63 bar High Temp) - 高温系列
+    // 设计压力：63 bar，最高设计压力，专门设计用于高温热泵应用
+    // 根据GEA资料：XHP系列最高供水温度可达95°C，对应排气温度更高
+    // 63 bar高压设计配合特殊材料和处理，可承受最高排气温度
     'Grasso V XHP (63 bar High Temp)': {
-        warning: 160,  // °C - 高温工况警告温度（根据GEA资料，XHP系列设计用于最高温度工况）
-        trip: 170      // °C - 高温工况跳闸温度（绝对机械限制，根据 GEA 服务手册）
+        warning: 160,  // °C - 高温工况警告温度（根据GEA资料，XHP系列设计用于最高温度工况，可达95°C供水）
+        trip: 170      // °C - 高温工况跳闸温度（绝对机械限制，根据GEA服务手册，63 bar高压设计的极限）
     },
-    // 5HP Series (CO2) - CO2 系列 (50 bar)
-    // CO2工况下温度限制较低
+    
+    // 6. Grasso 5HP (50 bar) - CO2系列
+    // 设计压力：50 bar，专门设计用于CO2（R744）工况
+    // CO2工况下，由于CO2的物性特点（临界温度31.1°C），排气温度限制较低
+    // 根据GEA服务手册：CO2工况下，排气温度应控制在130°C以下，绝对限制140°C
     'Grasso 5HP (50 bar)': {
-        warning: 130,  // °C - CO2工况警告温度
-        trip: 140      // °C - CO2工况跳闸温度
+        warning: 130,  // °C - CO2工况警告温度（CO2对温度更敏感，需要更保守的限制）
+        trip: 140      // °C - CO2工况跳闸温度（CO2工况绝对限制，超过此温度存在严重风险）
     },
     // MYCOM HS Series (High Pressure Heat Pump) - 高压热泵系列 (6.0 MPaG / 60 bar)
     // 根据MYCOM技术资料，HS系列设计用于高温热泵应用（可达90°C供水）

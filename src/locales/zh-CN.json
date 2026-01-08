@@ -149,7 +149,7 @@
     "coolingCOP": "制冷COP",
     "heatingCOP": "制热COP",
     "coolingCapacity": "制冷量 (Cooling)",
-    "heatingCapacity": "可利用供热 (Heating)",
+    "heatingCapacity": "制热量",
     "powerAndEfficiency": "功率与效率",
     "shaftPower": "轴功率",
     "totalShaftPower": "总轴功率",

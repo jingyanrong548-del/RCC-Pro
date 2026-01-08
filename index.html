@@ -805,8 +805,8 @@
                                 <div>
                                     <div class="relative">
                                         <select id="fluid_m2" class="block w-full appearance-none bg-gray-50/50 border-0 rounded-xl py-3 px-4 text-gray-900 font-medium ring-1 ring-black/5 focus:ring-2 focus:ring-primary-500 focus:bg-white transition-all shadow-sm">
-                                            <option value="R245fa" selected>R245fa</option>
-                                            <option value="R134a">R134a</option><option value="R365mfc">R365mfc</option><option value="R1233zd(E)">R1233zd(E)</option><option value="R1234ze(E)">R1234ze(E)</option><option value="R123">R123</option><option value="R22">R22</option><option value="R410A">R410A</option><option value="R32">R32</option><option value="R290">R290</option><option value="R717">R717</option><option value="R515B">R515B</option><option value="R142b">R142b</option><option value="R1336mzz(Z)">R1336mzz(Z)</option><option value="R744">R744 (CO2)</option><option value="R600a">R600a</option><option value="R152a">R152a</option><option value="R454B">R454B</option><option value="R513A">R513A</option><option value="R236fa">R236fa</option><option value="R23">R23</option><option value="R1234yf">R1234yf</option><option value="R1270">R1270</option><option value="R1150">R1150</option><option value="R507A">R507A</option>
+                                            <option value="R245fa">R245fa</option>
+                                            <option value="R134a">R134a</option><option value="R365mfc">R365mfc</option><option value="R1233zd(E)">R1233zd(E)</option><option value="R1234ze(E)">R1234ze(E)</option><option value="R123">R123</option><option value="R22">R22</option><option value="R410A">R410A</option><option value="R32">R32</option><option value="R290">R290</option><option value="R717" selected>R717</option><option value="R515B">R515B</option><option value="R142b">R142b</option><option value="R1336mzz(Z)">R1336mzz(Z)</option><option value="R744">R744 (CO2)</option><option value="R600a">R600a</option><option value="R152a">R152a</option><option value="R454B">R454B</option><option value="R513A">R513A</option><option value="R236fa">R236fa</option><option value="R23">R23</option><option value="R1234yf">R1234yf</option><option value="R1270">R1270</option><option value="R1150">R1150</option><option value="R507A">R507A</option>
                                         </select>
                                         <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-500">
                                             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
@@ -1025,19 +1025,26 @@
                             <div class="grid grid-cols-2 gap-4">
                                 <div>
                                     <label class="block text-xs text-gray-500 mb-1 ml-1">蒸发 Te (°C)</label>
-                                    <input type="number" id="temp_evap_m2" value="50" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
+                                    <input type="number" id="temp_evap_m2" value="-10" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
                                 </div>
                                 <div>
                                     <label class="block text-xs text-gray-500 mb-1 ml-1">冷凝 Tc (°C)</label>
-                                    <input type="number" id="temp_cond_m2" value="125" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
+                                    <input type="number" id="temp_cond_m2" value="35" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
                                 </div>
                                 <div>
-                                    <label class="block text-xs text-gray-500 mb-1 ml-1">过热度 (K)</label>
-                                    <input type="number" id="superheat_m2" value="5" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
+                                    <label class="block text-xs text-gray-500 mb-1 ml-1">有用过热度 (K)</label>
+                                    <input type="number" id="useful_superheat_m2" value="0" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
+                                    <p class="text-[10px] text-gray-400 mt-0.5 ml-1">蒸发器内过热，计入制冷量</p>
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1 ml-1">总过热度 (K)</label>
+                                    <input type="number" id="superheat_m2" value="0" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
+                                    <p class="text-[10px] text-gray-400 mt-0.5 ml-1">压缩机吸气口过热</p>
                                 </div>
                                 <div>
                                     <label class="block text-xs text-gray-500 mb-1 ml-1">过冷度 (K)</label>
-                                    <input type="number" id="subcooling_m2" value="5" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
+                                    <input type="number" id="subcooling_m2" value="0" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
+                                    <p class="text-[10px] text-gray-400 mt-0.5 ml-1">0表示饱和状态</p>
                                 </div>
                             </div>
                         </div>
@@ -1102,6 +1109,38 @@
                                 <input type="number" id="motor_eff_m2" value="0.95" step="any" class="glass-input block w-full rounded-xl py-2 px-3 text-gray-900 font-medium">
                             </div>
 
+                        </div>
+
+                        <div class="glass-panel rounded-3xl p-6 relative overflow-hidden group">
+                            <div class="flex items-center justify-between mb-5 z-10 relative">
+                                <div class="flex items-center space-x-3">
+                                    <div class="w-8 h-8 rounded-xl bg-cyan-100 flex items-center justify-center text-cyan-600 shadow-sm">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                    </div>
+                                    <h3 class="text-base font-bold text-gray-900">缸头冷却 (Cylinder Head Cooling)</h3>
+                                </div>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" id="cylinder_head_cooling_enabled_m2" class="sr-only peer" checked>
+                                    <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all after:shadow-sm peer-checked:bg-cyan-500 transition-colors duration-300 ease-ios"></div>
+                                </label>
+                            </div>
+
+                            <div id="cylinder-head-cooling-settings-m2" class="hidden space-y-4 relative z-10 animate-fade-in">
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-xs text-gray-500 mb-1 ml-1">进水温度 (°C)</label>
+                                        <input type="number" id="cylinder_head_water_inlet_temp_m2" value="30" step="0.1" min="10" max="80" class="glass-input block w-full rounded-lg py-1.5 px-2 text-xs text-gray-900 font-medium">
+                                        <p class="text-[10px] text-gray-400 mt-0.5 ml-1">必须 > 蒸发温度 + 10K</p>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs text-gray-500 mb-1 ml-1">出水温度 (°C)</label>
+                                        <input type="number" id="cylinder_head_water_outlet_temp_m2" value="35" step="0.1" min="15" max="100" class="glass-input block w-full rounded-lg py-1.5 px-2 text-xs text-gray-900 font-medium">
+                                        <p class="text-[10px] text-gray-400 mt-0.5 ml-1">必须 > 进水温度</p>
+                                    </div>
+                                </div>
+                                <div class="text-[10px] text-gray-600">换热量: <span id="cylinder_head_q_m2" class="font-bold text-cyan-700">--</span> kW</div>
+                            </div>
+                            <div id="cylinder-head-cooling-placeholder-m2" class="text-xs text-gray-400 italic py-1 text-center">缸头冷却未启用</div>
                         </div>
 
                         <button type="submit" id="calc-button-mode-2" class="w-full bg-gray-900 hover:bg-black text-white font-semibold py-4 px-8 rounded-2xl shadow-lg hover:shadow-xl transform active:scale-[0.98] transition-all duration-300 ease-ios disabled:opacity-70 disabled:cursor-not-allowed text-lg mb-8 lg:mb-0">

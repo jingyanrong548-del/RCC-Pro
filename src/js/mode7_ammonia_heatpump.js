@@ -1020,15 +1020,49 @@ function calculateMode7() {
             // =========================================================
             // Work & Finalization
             // =========================================================
+            // RCC Pro: 重构功率计算 - 分离等熵效率和机械效率
+            // =========================================================
+            // Step A: 气体热力学（等熵效率决定气体行为）
             const h_2s = CP_INSTANCE.PropsSI('H', 'P', Pc_Pa, 'S', s_suc, fluid);
-            const W_ideal_W = m_dot_suc * (h_2s - h_suc);
-
+            
+            // 等熵效率（ISENTROPIC_EFF）：决定实际排气焓值和温度
+            // 实际排气焓值 = h_suc + (h_2s - h_suc) / η_is
+            const h_2a_final = h_suc + (h_2s - h_suc) / eta_s_display;
+            const T_2a_final_K = CP_INSTANCE.PropsSI('T', 'P', Pc_Pa, 'H', h_2a_final, fluid);
+            let T_2a_final_C = T_2a_final_K - 273.15;
+            
+            // 气体功率（Gas Power）：压缩气体所需的功率
+            const P_gas_W = m_dot_suc * (h_2a_final - h_suc);
+            
+            // Step B: 轴功率计算（机械效率决定摩擦损失）
+            // 机械效率（MECHANICAL_EFF）：决定摩擦损失，影响轴功率
+            // 轴功率 = 气体功率 / 机械效率
+            const MECHANICAL_EFF = 0.95; // 机械效率（基于高能效要求）
+            
             if (AppState.currentMode === AppState.MODES.GEOMETRY) {
-                // 只使用轴功率基准
-                W_shaft_W = W_ideal_W / eta_s_display;
+                // 几何模式：从气体功率计算轴功率
+                W_shaft_W = P_gas_W / MECHANICAL_EFF;
             } else {
-                if (W_shaft_W > 0) eta_s_display = W_ideal_W / W_shaft_W;
+                // 多项式模式：从轴功率反推等熵效率
+                if (W_shaft_W > 0) {
+                    // 从轴功率反推气体功率
+                    const P_gas_calculated = W_shaft_W * MECHANICAL_EFF;
+                    // 从气体功率反推等熵效率
+                    const h_2a_calculated = h_suc + P_gas_calculated / m_dot_suc;
+                    // 计算等熵效率：η_is = (h_2s - h_suc) / (h_2a - h_suc)
+                    const delta_h_ideal = h_2s - h_suc;
+                    const delta_h_actual = h_2a_calculated - h_suc;
+                    if (delta_h_actual > 0) {
+                        eta_s_display = delta_h_ideal / delta_h_actual;
+                    }
+                }
             }
+            
+            // Step C: 油冷负荷计算（摩擦热）
+            // 摩擦热 = 轴功率 - 气体功率
+            // 这是机械损失，必须由油冷系统带走
+            const isOilCoolerEnabled = true; // 始终启用，因为摩擦热总是存在
+            const Q_oil_W = W_shaft_W - P_gas_W; // 摩擦热 = 轴功率 - 气体功率
 
             // =========================================================
             // 制冷量计算：基于有用过热（蒸发器内吸收的热量）
@@ -1039,30 +1073,7 @@ function calculateMode7() {
             
             // 管道过热吸收的热量（通常很小，用于参考）
             const Q_evap_line_W = m_dot_suc * (h_1 - h_1a); 
-            const h_system_in = m_dot_suc * h_suc; 
-            
-            // =========================================================
-            // RCC Pro: 活塞压缩机排气温度计算（基于等熵效率，不依赖油冷）
-            // =========================================================
-            // 关键区别：GEA 活塞压缩机的油仅用于润滑和冷却运动部件（轴承、曲轴、轴封），
-            // 不用于冷却气体。气体压缩热主要留在气体中，导致较高的排气温度。
-            // 排气温度计算：基于等熵效率直接计算，不依赖油路参数
-            const h_2a_final = h_suc + (h_2s - h_suc) / eta_s_display;
-            const T_2a_final_K = CP_INSTANCE.PropsSI('T', 'P', Pc_Pa, 'H', h_2a_final, fluid);
-            let T_2a_final_C = T_2a_final_K - 273.15;
-            
-            // 修复：油冷始终启用（因为摩擦热总是存在）
-            // 活塞压缩机的油冷用于带走摩擦热（7%轴功率），这是物理必然，不需要用户选择
-            const isOilCoolerEnabled = true; // 始终启用，因为摩擦热总是存在
-            
-            // =========================================================
-            // RCC Pro: 活塞压缩机油冷负荷计算（仅摩擦热）
-            // =========================================================
-            // 关键区别：与喷油螺杆不同，活塞压缩机的油冷仅带走摩擦热（Friction Heat），
-            // 而不是气体压缩热。摩擦热通常为轴功率的 5-8%。
-            // 参考：GEA 样册提到"全流量油流经轴封以实现最大程度的冷却和延长寿命"
-            const FRICTION_LOSS_FACTOR = 0.07; // 摩擦损失系数（7%的轴功率，根据荆工要求）
-            const Q_oil_W = W_shaft_W * FRICTION_LOSS_FACTOR;
+            const h_system_in = m_dot_suc * h_suc;
             
             // =========================================================
             // RCC Pro: 缸头冷却负荷计算（可选/条件性）
@@ -1553,9 +1564,22 @@ function calculateMode7() {
             // =========================================================
             // 总排热计算（用于能量守恒验证）
             // =========================================================
-            // 总排热 = 冷凝器 + 润滑系统油冷 + 过冷器 + 降低过热器 + 缸头冷却（如果启用）
-            // 注意：总排热包括所有热量，用于能量守恒验证
+            // 总排热量计算：使用能量守恒原理
+            // =========================================================
+            // 能量守恒：总排热量 = 制冷量 + 轴功率
+            // 注意：摩擦热已包含在轴功率中，不应重复计算
+            // 总排热量 = 冷凝器排热 + 摩擦热（油冷）+ 过冷器 + 降低过热器 + 缸头冷却排热
             const Q_total_rejected_W = Q_cond_W + Q_oil_cooler_W + Q_subcooler_W + Q_desuperheater_W + Q_cylinder_head_W;
+            
+            // 验证：总排热量应该等于能量守恒值
+            const Q_heating_expected = Q_evap_W + W_shaft_W;
+            const balance_error = Math.abs(Q_total_rejected_W - Q_heating_expected);
+            const balance_error_percent = Q_heating_expected > 0 ? (balance_error / Q_heating_expected) * 100 : 0;
+            if (balance_error_percent > 0.1) { // 如果误差超过0.1%，记录警告
+                console.warn(`[RCC Pro] 热平衡误差: ${(balance_error/1000).toFixed(2)} kW (${balance_error_percent.toFixed(2)}%)`);
+                console.warn(`  总排热量（能量守恒）: ${(Q_heating_expected/1000).toFixed(2)} kW = 制冷量 ${(Q_evap_W/1000).toFixed(2)} kW + 轴功率 ${(W_shaft_W/1000).toFixed(2)} kW`);
+                console.warn(`  总排热量（分项求和）: ${(Q_total_rejected_W/1000).toFixed(2)} kW`);
+            }
             
             // =========================================================
             // 可利用供热计算（工程实际应用）
@@ -1566,11 +1590,6 @@ function calculateMode7() {
             
             // 为了向后兼容，保留 Q_heating_total_W 作为总排热
             const Q_heating_total_W = Q_total_rejected_W;
-
-            // #region agent log - Energy Balance Debug
-            const energy_balance_lhs = W_shaft_W + Q_evap_W;
-            const energy_balance_rhs = Q_total_rejected_W;
-            const energy_balance_diff = energy_balance_lhs - energy_balance_rhs;
             // 调试日志已移除（避免控制台错误）
 
             // COP 计算使用轴功率
@@ -2235,7 +2254,7 @@ function calculateMode7() {
                 <div class="space-y-1 bg-white/40 p-4 rounded-2xl border border-white/50 shadow-inner">
                     ${createSectionHeader(i18next.t('components.powerAndEfficiency'))}
                     ${createDetailRow(i18next.t('components.shaftPower'), `${(W_shaft_W/1000).toFixed(2)} kW`, true)}
-                    ${createDetailRow('润滑系统摩擦热 (Friction Heat)', `${(Q_oil_W/1000).toFixed(2)} kW (约7%轴功率)`, false)}
+                    ${createDetailRow('润滑系统摩擦热 (Friction Heat)', `${(Q_oil_W/1000).toFixed(2)} kW (机械损失)`, false)}
                     ${Q_cylinder_head_W > 0 ? createDetailRow('缸头冷却负荷 (Cylinder Head Cooling)', `${(Q_cylinder_head_W/1000).toFixed(2)} kW (低品位排热，温度约30-50°C)`, true) : ''}
                     ${isCylinderHeadCoolingEnabled && Q_cylinder_head_W > 0 ? createDetailRow('缸头冷却后排气温度', `${T_2a_after_head_cooling_C.toFixed(1)} °C (降低 ${(T_2a_final_C - T_2a_after_head_cooling_C).toFixed(1)}°C)`) : ''}
                     ${createDetailRow('Calc Logic', efficiency_info_text)}
