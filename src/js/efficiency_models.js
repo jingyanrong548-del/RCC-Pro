@@ -226,9 +226,88 @@ export function calculateReciprocatingVolumetricEfficiency(
 }
 
 /**
+ * 计算 MYCOM 活塞压缩机效率（基于 MYCOM 技术水平）
+ * MYCOM 活塞压缩机特点：
+ * - 容积效率：略低于 GEA，但设计更注重可靠性和长期稳定性
+ * - 等熵效率：在标准工况下表现良好，高压力比时略有下降
+ * 
+ * @param {number} ratio - 压力比 (P_dis / P_suc)
+ * @param {number} k_value - 等熵指数 k (绝热指数)
+ * @param {number} T_cond_celsius - 冷凝温度 (°C)
+ * @param {number} clearance_factor_input - 相对余隙容积（可选，默认0.04）
+ * @returns {Object} { eta_v: 容积效率, eta_is: 等熵效率 }
+ */
+export function calculateMycomEfficiencies(ratio, k_value, T_cond_celsius, clearance_factor_input) {
+    // ==========================================
+    // 1. MYCOM 专用常数（基于 MYCOM 技术水平）
+    // ==========================================
+    // Volumetric Efficiency: MYCOM 设计更保守，注重可靠性
+    const CLEARANCE_C = clearance_factor_input || 0.04;  // MYCOM 典型余隙容积（略低于 GEA）
+    const FLOW_RESISTANCE_FACTOR = 0.94;                  // MYCOM 流动阻力因子（略低于 GEA 的 0.96）
+    const LEAKAGE_COEFFICIENT = 0.015;                    // MYCOM 泄漏系数（1.5%损失/压力比，略高于 GEA）
+    
+    // Isentropic Efficiency: MYCOM 机械效率略低于 GEA，但设计更稳健
+    const MECHANICAL_EFF_BASE = 0.92;                     // MYCOM 机械效率（略低于 GEA 的 0.95）
+
+    // 参数验证
+    if (isNaN(ratio) || ratio < 1) {
+        console.warn('[MYCOM Efficiency] Invalid pressure ratio');
+        return { eta_v: 0.72, eta_is: 0.68 };
+    }
+    if (isNaN(k_value) || k_value < 1.0 || k_value > 2.0) {
+        console.warn('[MYCOM Efficiency] Invalid k value, using default 1.3');
+        k_value = 1.3;
+    }
+
+    // ==========================================
+    // 2. Volumetric Efficiency (λ) Calculation
+    // ==========================================
+    // Step 1: Theoretical Lambda (Clearance only)
+    const expansion_term = Math.pow(ratio, 1.0 / k_value) - 1.0;
+    const lambda_theo = 1.0 - CLEARANCE_C * expansion_term;
+
+    // Step 2: Real Lambda (Apply Leakage & Resistance)
+    // MYCOM 泄漏损失略高于 GEA
+    const leakage_loss = LEAKAGE_COEFFICIENT * ratio;
+    
+    // Real Lambda Formula:
+    let lambda_real = (lambda_theo * FLOW_RESISTANCE_FACTOR) - leakage_loss;
+
+    // Clamp: MYCOM 容积效率上限略低于 GEA
+    lambda_real = Math.max(0.2, Math.min(0.90, lambda_real));
+
+    // ==========================================
+    // 3. Isentropic Efficiency (η_is) Calculation
+    // ==========================================
+    // Step 1: Base Isentropic
+    // MYCOM 机械效率略低，但设计更稳健
+    let eta_is_base = lambda_real * MECHANICAL_EFF_BASE;
+
+    // Step 2: Heat Pump (High Temp) Correction
+    // MYCOM 在高冷凝温度时的修正更保守
+    let correction_factor = 1.0;
+    if (!isNaN(T_cond_celsius) && T_cond_celsius > 50) {
+        // MYCOM 修正系数：0.0025/度（略高于 GEA 的 0.002）
+        correction_factor = 1.0 - ((T_cond_celsius - 50) * 0.0025);
+        correction_factor = Math.max(0.65, Math.min(1.0, correction_factor));
+    }
+
+    // Step 3: Final η_is
+    let eta_is = eta_is_base * correction_factor;
+
+    // 边界保护：MYCOM 等熵效率上限略低于 GEA
+    eta_is = Math.max(0.48, Math.min(0.82, eta_is));
+
+    return {
+        eta_v: parseFloat(lambda_real.toFixed(4)),
+        eta_is: parseFloat(eta_is.toFixed(4))
+    };
+}
+
+/**
  * 计算活塞压缩机效率（半经验工程公式 - 混合方案）
  * 混合策略：保守的容积效率 + 高端的等熵效率
- * 针对氨热泵应用（高压力比、高排气温度）进行优化
+ * 针对 GEA Grasso 氨热泵应用（高压力比、高排气温度）进行优化
  * 
  * @param {number} ratio - 压力比 (P_dis / P_suc)
  * @param {number} k_value - 等熵指数 k (绝热指数)

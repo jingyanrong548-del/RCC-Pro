@@ -9,7 +9,7 @@
 
 import { openMobileSheet } from './ui.js';
 import { updateFluidInfo } from './coolprop_loader.js';
-import { calculateEmpiricalEfficiencies, calculateReciprocatingVolumetricEfficiency, calculateEfficiencies } from './efficiency_models.js';
+import { calculateEmpiricalEfficiencies, calculateReciprocatingVolumetricEfficiency, calculateEfficiencies, calculateMycomEfficiencies } from './efficiency_models.js';
 import { 
     createKpiCard, 
     createDetailRow, 
@@ -148,9 +148,18 @@ function updateAndDisplayEfficienciesM2() {
             console.warn('[Mode2] Failed to get k value from CoolProp, using default 1.3');
         }
         
-        // 使用GEA Grasso半经验工程公式计算效率（针对高端压缩机优化）
-        // 传递实际的余隙容积值（从压缩机型号或默认值获取）
-        const efficiencies = calculateEfficiencies(pressureRatio, k_value, Tc_C, clearance_factor);
+        // 根据品牌选择不同的效率计算模型
+        // GEA Grasso: 使用高端效率模型（保持不变）
+        // MYCOM: 使用 MYCOM 专用效率模型（基于 MYCOM 技术水平）
+        let efficiencies;
+        if (brand === 'MYCOM') {
+            // 使用 MYCOM 专用效率计算
+            efficiencies = calculateMycomEfficiencies(pressureRatio, k_value, Tc_C, clearance_factor);
+        } else {
+            // 使用 GEA Grasso 半经验工程公式计算效率（针对高端压缩机优化）
+            // 传递实际的余隙容积值（从压缩机型号或默认值获取）
+            efficiencies = calculateEfficiencies(pressureRatio, k_value, Tc_C, clearance_factor);
+        }
         
         if (etaVM2) etaVM2.value = efficiencies.eta_v.toFixed(4);
         if (etaSM2) etaSM2.value = efficiencies.eta_is.toFixed(3);
@@ -237,12 +246,47 @@ function initCompressorModelSelectorsM2() {
                         <br>
                         <span class="text-xs text-gray-600">转速范围: ${minRpm}-${maxRpm} RPM</span>
                     `;
-                } else {
+                } else if (brand === 'MYCOM' && detail.referenceRpm && detail.rpm_range && Array.isArray(detail.rpm_range) && detail.rpm_range.length === 2) {
+                    // MYCOM系列：显示参考转速下的排量并注明rpm，同时显示转速范围
+                    const [minRpm, maxRpm] = detail.rpm_range;
+                    const referenceRpm = detail.referenceRpm;
                     modelDisplacementInfoM2.innerHTML = `
                         <span class="font-bold">理论排量:</span> <span id="model_displacement_value_m2">${displacement.toFixed(0)}</span> m³/h
+                        <span class="ml-2 text-xs text-gray-600">(@ ${referenceRpm} RPM)</span>
+                        <br>
+                        <span class="text-xs text-gray-600">转速范围: ${minRpm}-${maxRpm} RPM</span>
                     `;
+                } else {
+                    // 其他品牌或没有转速范围信息的，显示基本排量信息
+                    let infoHtml = `<span class="font-bold">理论排量:</span> <span id="model_displacement_value_m2">${displacement.toFixed(0)}</span> m³/h`;
+                    if (detail.referenceRpm) {
+                        infoHtml += ` <span class="ml-2 text-xs text-gray-600">(@ ${detail.referenceRpm} RPM)</span>`;
+                    }
+                    if (detail.rpm_range && Array.isArray(detail.rpm_range) && detail.rpm_range.length === 2) {
+                        const [minRpm, maxRpm] = detail.rpm_range;
+                        infoHtml += `<br><span class="text-xs text-gray-600">转速范围: ${minRpm}-${maxRpm} RPM</span>`;
+                    }
+                    modelDisplacementInfoM2.innerHTML = infoHtml;
                 }
                 modelDisplacementInfoM2.classList.remove('hidden');
+                
+                // 更新转速输入框的转速范围提示
+                if (detail.rpm_range && Array.isArray(detail.rpm_range) && detail.rpm_range.length === 2) {
+                    const [minRpm, maxRpm] = detail.rpm_range;
+                    const rpmInput = document.getElementById('rpm_m2');
+                    const rpmLabel = rpmInput?.parentElement?.querySelector('label');
+                    
+                    // 在转速输入框下方添加或更新转速范围提示
+                    let rpmRangeHint = rpmInput?.parentElement?.querySelector('.rpm-range-hint');
+                    if (!rpmRangeHint && rpmInput?.parentElement) {
+                        rpmRangeHint = document.createElement('div');
+                        rpmRangeHint.className = 'rpm-range-hint text-xs text-gray-500 mt-1 ml-1';
+                        rpmInput.parentElement.appendChild(rpmRangeHint);
+                    }
+                    if (rpmRangeHint) {
+                        rpmRangeHint.textContent = `转速范围: ${minRpm}-${maxRpm} RPM`;
+                    }
+                }
                 
                 // Automatically switch to volume mode (流量定义)
                 const volModeRadio = document.querySelector('input[name="flow_mode_m2"][value="vol"]');
@@ -262,9 +306,21 @@ function initCompressorModelSelectorsM2() {
                 }
             } else {
                 modelDisplacementInfoM2.classList.add('hidden');
+                // 清除转速范围提示
+                const rpmInput = document.getElementById('rpm_m2');
+                const rpmRangeHint = rpmInput?.parentElement?.querySelector('.rpm-range-hint');
+                if (rpmRangeHint) {
+                    rpmRangeHint.textContent = '';
+                }
             }
         } else {
             modelDisplacementInfoM2.classList.add('hidden');
+            // 清除转速范围提示
+            const rpmInput = document.getElementById('rpm_m2');
+            const rpmRangeHint = rpmInput?.parentElement?.querySelector('.rpm-range-hint');
+            if (rpmRangeHint) {
+                rpmRangeHint.textContent = '';
+            }
         }
     });
 

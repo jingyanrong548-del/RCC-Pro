@@ -439,6 +439,141 @@ export const COMPRESSOR_MODELS = {
                 // 调试参考：样本标注 8MII @970rpm = 826 m³/h，理论计算 = 826.26 m³/h
                 debug_reference: 'At 970 rpm, 8MII displacement should be 826 m³/h'
             }
+        ],
+        'WBHE Series (Large Size Single-Stage)': [
+            {
+                model: '4WBHE',
+                displacement: 309,  // 参考转速970rpm下的理论排量（样本值）
+                referenceRpm: 970,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 309,  // 参考转速下的排量（样本值）
+                swept_volume_max_m3h: 382.22,  // 最大转速1200rpm下的扫气量（用于计算）
+                cylinders: 4,
+                max_rpm: 1200,
+                rpm_range: [800, 1200],  // 样本标注：800-1200 rpm
+                clearance_factor: 0.04,  // 大型压缩机典型值
+                refrigerants: ['R717', 'Propane', 'R134a', 'R404A', 'R507A', 'R23'],
+                // 样本数据：4WBHE @970rpm = 309 m³/h，缸径130mm，行程100mm
+                debug_reference: 'At 970 rpm, 4WBHE displacement should be 309 m³/h (sample data)'
+            },
+            {
+                model: '6WBHE',
+                displacement: 464,  // 参考转速970rpm下的理论排量（样本值）
+                referenceRpm: 970,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 464,  // 参考转速下的排量（样本值）
+                swept_volume_max_m3h: 573.40,  // 最大转速1200rpm下的扫气量（用于计算）
+                cylinders: 6,
+                max_rpm: 1200,
+                rpm_range: [800, 1200],  // 样本标注：800-1200 rpm
+                clearance_factor: 0.04,  // 大型压缩机典型值
+                refrigerants: ['R717', 'Propane', 'R134a', 'R404A', 'R507A', 'R23'],
+                // 样本数据：6WBHE @970rpm = 464 m³/h，缸径130mm，行程100mm
+                debug_reference: 'At 970 rpm, 6WBHE displacement should be 464 m³/h (sample data)'
+            },
+            {
+                model: '8WBHE',
+                displacement: 618,  // 参考转速970rpm下的理论排量（样本值）
+                referenceRpm: 970,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 618,  // 参考转速下的排量（样本值）
+                swept_volume_max_m3h: 764.54,  // 最大转速1200rpm下的扫气量（用于计算）
+                cylinders: 8,
+                max_rpm: 1200,
+                rpm_range: [800, 1200],  // 样本标注：800-1200 rpm
+                clearance_factor: 0.04,  // 大型压缩机典型值
+                refrigerants: ['R717', 'Propane', 'R134a', 'R404A', 'R507A', 'R23'],
+                // 样本数据：8WBHE @970rpm = 618 m³/h，缸径130mm，行程100mm
+                // 样本说明：超过15,000台使用记录，行业领先的可靠性
+                debug_reference: 'At 970 rpm, 8WBHE displacement should be 618 m³/h (sample data)'
+            }
+        ],
+        'WA Series (Medium Size Single-Stage)': [
+            {
+                model: '6WA',
+                displacement: 580,  // 参考转速下的理论排量（待确认实际值）
+                referenceRpm: 1450,  // 参考转速（典型值）
+                referenceDisplacement: 580,  // 参考转速下的排量
+                swept_volume_max_m3h: 600.00,  // 最大转速1500rpm下的扫气量（用于计算）
+                cylinders: 6,
+                max_rpm: 1500,
+                rpm_range: [800, 1500],  // 中型压缩机典型转速范围
+                clearance_factor: 0.04,  // 中型压缩机典型值
+                refrigerants: ['R717', 'Propane', 'HFCs'],
+                // 注意：排量数据需要根据实际样本确认
+                debug_reference: 'WA series - medium size single-stage compressor with proven track record'
+            }
+        ],
+        'K Series (Multi-Refrigerant Small Compressors)': [
+            {
+                model: '2K',
+                displacement: 150,  // 参考转速下的理论排量（待确认实际值）
+                referenceRpm: 1450,  // 参考转速（典型值）
+                referenceDisplacement: 150,  // 参考转速下的排量
+                swept_volume_max_m3h: 186.21,  // 最大转速1800rpm下的扫气量（用于计算）
+                cylinders: 2,
+                max_rpm: 1800,
+                rpm_range: [800, 1800],  // K系列支持800-1800rpm（官网说明）
+                clearance_factor: 0.04,  // 小型压缩机典型值
+                refrigerants: ['R717', 'Propane', 'HFCs'],
+                // 注意：排量数据需要根据实际样本确认
+                debug_reference: 'K series - multi-refrigerant small compressor, supports 800-1800rpm'
+            },
+            {
+                model: '4K',
+                displacement: 300,  // 参考转速下的理论排量（待确认实际值）
+                referenceRpm: 1450,  // 参考转速（典型值）
+                referenceDisplacement: 300,  // 参考转速下的排量
+                swept_volume_max_m3h: 372.41,  // 最大转速1800rpm下的扫气量（用于计算）
+                cylinders: 4,
+                max_rpm: 1800,
+                rpm_range: [800, 1800],  // K系列支持800-1800rpm（官网说明）
+                clearance_factor: 0.04,  // 小型压缩机典型值
+                refrigerants: ['R717', 'Propane', 'HFCs'],
+                // 注意：排量数据需要根据实际样本确认
+                debug_reference: 'K series - multi-refrigerant small compressor, supports 800-1800rpm'
+            },
+            {
+                model: '6K',
+                displacement: 450,  // 参考转速下的理论排量（待确认实际值）
+                referenceRpm: 1450,  // 参考转速（典型值）
+                referenceDisplacement: 450,  // 参考转速下的排量
+                swept_volume_max_m3h: 558.62,  // 最大转速1800rpm下的扫气量（用于计算）
+                cylinders: 6,
+                max_rpm: 1800,
+                rpm_range: [800, 1800],  // K系列支持800-1800rpm（官网说明）
+                clearance_factor: 0.04,  // 小型压缩机典型值
+                refrigerants: ['R717', 'Propane', 'HFCs'],
+                // 注意：排量数据需要根据实际样本确认
+                debug_reference: 'K series - multi-refrigerant small compressor, supports 800-1800rpm'
+            },
+            {
+                model: '8K',
+                displacement: 600,  // 参考转速下的理论排量（待确认实际值）
+                referenceRpm: 1450,  // 参考转速（典型值）
+                referenceDisplacement: 600,  // 参考转速下的排量
+                swept_volume_max_m3h: 744.83,  // 最大转速1800rpm下的扫气量（用于计算）
+                cylinders: 8,
+                max_rpm: 1800,
+                rpm_range: [800, 1800],  // K系列支持800-1800rpm（官网说明）
+                clearance_factor: 0.04,  // 小型压缩机典型值
+                refrigerants: ['R717', 'Propane', 'HFCs'],
+                // 注意：排量数据需要根据实际样本确认
+                debug_reference: 'K series - multi-refrigerant small compressor, supports 800-1800rpm'
+            }
+        ],
+        'L Series (Ammonia Exclusive Design)': [
+            {
+                model: '8L',
+                displacement: 800,  // 参考转速下的理论排量（待确认实际值）
+                referenceRpm: 1450,  // 参考转速（典型值）
+                referenceDisplacement: 800,  // 参考转速下的排量
+                swept_volume_max_m3h: 993.10,  // 最大转速1800rpm下的扫气量（用于计算）
+                cylinders: 8,
+                max_rpm: 1800,
+                rpm_range: [1000, 1800],  // L系列支持1000-1800rpm（官网说明）
+                clearance_factor: 0.035,  // 氨专用设计典型值
+                refrigerants: ['R717'],  // 专为氨制冷剂设计
+                // 注意：排量数据需要根据实际样本确认
+                debug_reference: 'L series - compressor exclusively designed for ammonia refrigerant, 1000-1800rpm'
+            }
         ]
     },
 };
@@ -602,6 +737,34 @@ export const DISCHARGE_TEMP_LIMITS = {
     'M-II Series (3.0 MPaG High Efficiency Ammonia)': {
         warning: 140,  // °C - 标准氨制冷/热泵工况警告温度
         trip: 150      // °C - 标准氨制冷/热泵工况跳闸温度
+    },
+    // MYCOM WBHE Series (Large Size Single-Stage) - 大型单级系列
+    // 根据MYCOM技术资料，WBHE系列为大型单级压缩机，超过15000台使用记录
+    // 设计压力与标准氨系列类似，用于标准制冷/热泵应用
+    'WBHE Series (Large Size Single-Stage)': {
+        warning: 140,  // °C - 标准氨制冷/热泵工况警告温度
+        trip: 150      // °C - 标准氨制冷/热泵工况跳闸温度
+    },
+    // MYCOM WA Series (Medium Size Single-Stage) - 中型单级系列
+    // 根据MYCOM技术资料，WA系列为中型单级压缩机，适用于风冷冷凝器
+    // 设计压力与标准氨系列类似，用于标准制冷/热泵应用
+    'WA Series (Medium Size Single-Stage)': {
+        warning: 140,  // °C - 标准氨制冷/热泵工况警告温度
+        trip: 150      // °C - 标准氨制冷/热泵工况跳闸温度
+    },
+    // MYCOM K Series (Multi-Refrigerant Small Compressors) - 小型多制冷剂压缩机
+    // 根据MYCOM技术资料，K系列为小型多制冷剂压缩机，支持800-1800rpm
+    // 可用于热泵应用，但设计压力与标准氨系列类似
+    'K Series (Multi-Refrigerant Small Compressors)': {
+        warning: 140,  // °C - 标准氨制冷/热泵工况警告温度
+        trip: 150      // °C - 标准氨制冷/热泵工况跳闸温度
+    },
+    // MYCOM L Series (Ammonia Exclusive Design) - 氨专用设计系列
+    // 根据MYCOM技术资料，L系列专为氨制冷剂设计，支持1000-1800rpm
+    // 设计压力与标准氨系列类似，用于标准氨制冷应用
+    'L Series (Ammonia Exclusive Design)': {
+        warning: 140,  // °C - 标准氨制冷工况警告温度
+        trip: 150      // °C - 标准氨制冷工况跳闸温度
     }
 };
 
@@ -664,8 +827,8 @@ export function findDisplacementByModelString(modelString) {
  * @returns {string[]} 过滤后的品牌名称数组
  */
 export function getFilteredBrands(mode) {
-    // Mode 7 (氨热泵): 支持 GEA Grasso 和 MYCOM 品牌
-    if (mode === 'm7') {
+    // Mode 2 (制冷热泵单级) 和 Mode 7 (氨热泵): 支持 GEA Grasso 和 MYCOM 品牌
+    if (mode === 'm2' || mode === 'm7') {
         return ['GEA Grasso', 'MYCOM'];
     }
     // 其他模式: 使用 GEA Grasso 品牌
