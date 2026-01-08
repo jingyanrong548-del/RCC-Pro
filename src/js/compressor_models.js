@@ -207,6 +207,126 @@ export const COMPRESSOR_MODELS = {
             }
         ]
     },
+    'MYCOM': {
+        'HS Series (6.0 MPaG High Pressure Heat Pump)': [
+            {
+                model: '4HS',
+                displacement: 388,  // 参考转速下的理论排量（与样本一致）
+                referenceRpm: 1450,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 388,  // 参考转速下的排量（样本值）
+                swept_volume_max_m3h: 401.38,  // 最大转速1500rpm下的扫气量（用于计算）
+                cylinders: 4,
+                max_rpm: 1500,
+                rpm_range: [750, 1500],
+                clearance_factor: 0.045,  // 热泵工况典型值
+                refrigerants: ['R717', 'R744'],
+                // 调试参考：样本标注 4HS @1450rpm = 388 m³/h，理论计算 = 388.00 m³/h
+                debug_reference: 'At 1450 rpm, 4HS displacement should be 388 m³/h'
+            },
+            {
+                model: '6HS',
+                displacement: 582,  // 参考转速下的理论排量（与样本一致）
+                referenceRpm: 1450,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 582,  // 参考转速下的排量（样本值）
+                swept_volume_max_m3h: 602.07,  // 最大转速1500rpm下的扫气量（用于计算）
+                cylinders: 6,
+                max_rpm: 1500,
+                rpm_range: [750, 1500],
+                clearance_factor: 0.045,  // 热泵工况典型值
+                refrigerants: ['R717', 'R744'],
+                // 调试参考：样本标注 6HS @1450rpm = 582 m³/h，理论计算 = 582.00 m³/h
+                debug_reference: 'At 1450 rpm, 6HS displacement should be 582 m³/h'
+            }
+        ],
+        'HK Series (5.0 MPaG High Pressure CO2/Heat Pump)': [
+            {
+                model: '4HK-P',
+                displacement: 128,  // 参考转速下的理论排量（与样本一致）
+                referenceRpm: 1450,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 128,  // 参考转速下的排量（样本值）
+                swept_volume_max_m3h: 159.34,  // 最大转速1800rpm下的扫气量（用于计算）
+                cylinders: 4,
+                max_rpm: 1800,
+                rpm_range: [900, 1800],
+                clearance_factor: 0.045,  // 热泵/CO2工况典型值
+                refrigerants: ['R717', 'R744'],
+                // 调试参考：样本标注 4HK-P @1450rpm = 128 m³/h，理论计算 = 128.36 m³/h
+                debug_reference: 'At 1450 rpm, 4HK-P displacement should be 128 m³/h'
+            },
+            {
+                model: '6HK',
+                displacement: 193,  // 参考转速下的理论排量（与样本一致）
+                referenceRpm: 1450,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 193,  // 参考转速下的排量（样本值）
+                swept_volume_max_m3h: 239.01,  // 最大转速1800rpm下的扫气量（用于计算）
+                cylinders: 6,
+                max_rpm: 1800,
+                rpm_range: [900, 1800],
+                clearance_factor: 0.045,  // 热泵/CO2工况典型值
+                refrigerants: ['R717', 'R744'],
+                // 调试参考：样本标注 6HK @1450rpm = 193 m³/h，理论计算 = 192.54 m³/h
+                debug_reference: 'At 1450 rpm, 6HK displacement should be 193 m³/h'
+            }
+        ],
+        'M-II Series (3.0 MPaG High Efficiency Ammonia)': [
+            {
+                model: '2MII',
+                displacement: 207,  // 参考转速下的理论排量（与样本一致）
+                referenceRpm: 970,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 207,  // 参考转速下的排量（样本值）
+                swept_volume_max_m3h: 319.43,  // 最大转速1500rpm下的扫气量（用于计算）
+                cylinders: 2,
+                max_rpm: 1500,
+                rpm_range: [600, 1500],  // 水冷氨机转速范围（样本：600-1500 rpm）
+                clearance_factor: 0.035,  // 高效氨机典型值
+                refrigerants: ['R717', 'Propane', 'HFCs'],
+                // 调试参考：样本标注 2MII @970rpm = 207 m³/h，理论计算 = 206.56 m³/h
+                debug_reference: 'At 970 rpm, 2MII displacement should be 207 m³/h'
+            },
+            {
+                model: '4MII',
+                displacement: 413,  // 参考转速下的理论排量（与样本一致）
+                referenceRpm: 970,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 413,  // 参考转速下的排量（样本值）
+                swept_volume_max_m3h: 638.86,  // 最大转速1500rpm下的扫气量（用于计算）
+                cylinders: 4,
+                max_rpm: 1500,
+                rpm_range: [600, 1500],  // 水冷氨机转速范围（样本：600-1500 rpm）
+                clearance_factor: 0.035,  // 高效氨机典型值
+                refrigerants: ['R717', 'Propane', 'HFCs'],
+                // 调试参考：样本标注 4MII @970rpm = 413 m³/h，理论计算 = 413.13 m³/h
+                debug_reference: 'At 970 rpm, 4MII displacement should be 413 m³/h'
+            },
+            {
+                model: '6MII',
+                displacement: 620,  // 参考转速下的理论排量（与样本一致）
+                referenceRpm: 970,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 620,  // 参考转速下的排量（样本值）
+                swept_volume_max_m3h: 958.29,  // 最大转速1500rpm下的扫气量（用于计算）
+                cylinders: 6,
+                max_rpm: 1500,
+                rpm_range: [600, 1500],  // 水冷氨机转速范围（样本：600-1500 rpm）
+                clearance_factor: 0.035,  // 高效氨机典型值
+                refrigerants: ['R717', 'Propane', 'HFCs'],
+                // 调试参考：样本标注 6MII @970rpm = 620 m³/h，理论计算 = 619.69 m³/h
+                debug_reference: 'At 970 rpm, 6MII displacement should be 620 m³/h'
+            },
+            {
+                model: '8MII',
+                displacement: 826,  // 参考转速下的理论排量（与样本一致）
+                referenceRpm: 970,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 826,  // 参考转速下的排量（样本值）
+                swept_volume_max_m3h: 1277.71,  // 最大转速1500rpm下的扫气量（用于计算）
+                cylinders: 8,
+                max_rpm: 1500,
+                rpm_range: [600, 1500],  // 水冷氨机转速范围（样本：600-1500 rpm）
+                clearance_factor: 0.035,  // 高效氨机典型值
+                refrigerants: ['R717', 'Propane', 'HFCs'],
+                // 调试参考：样本标注 8MII @970rpm = 826 m³/h，理论计算 = 826.26 m³/h
+                debug_reference: 'At 970 rpm, 8MII displacement should be 826 m³/h'
+            }
+        ]
+    },
 };
 
 /**
@@ -319,6 +439,26 @@ export const DISCHARGE_TEMP_LIMITS = {
     'Grasso 5HP (50 bar)': {
         warning: 130,  // °C - CO2工况警告温度
         trip: 140      // °C - CO2工况跳闸温度
+    },
+    // MYCOM HS Series (High Pressure Heat Pump) - 高压热泵系列 (6.0 MPaG / 60 bar)
+    // 根据MYCOM技术资料，HS系列设计用于高温热泵应用（可达90°C供水）
+    // 90°C供水对应更高排气温度，因此提高温度限制
+    'HS Series (6.0 MPaG High Pressure Heat Pump)': {
+        warning: 170,  // °C - 高温热泵工况警告温度（90°C供水对应更高排气温度）
+        trip: 180      // °C - 高温热泵工况跳闸温度（绝对机械限制）
+    },
+    // MYCOM HK Series (High Pressure CO2/Heat Pump) - 高压CO2/热泵系列 (5.0 MPaG / 50 bar)
+    // 根据MYCOM技术资料，HK系列设计用于热泵/CO2应用（可达85°C冷凝）
+    // 50 bar高压设计，可承受更高排气温度
+    'HK Series (5.0 MPaG High Pressure CO2/Heat Pump)': {
+        warning: 160,  // °C - 热泵/CO2工况警告温度（50 bar高压设计，可承受更高温度）
+        trip: 170      // °C - 热泵/CO2工况跳闸温度
+    },
+    // MYCOM M-II Series (High Efficiency Ammonia) - 高效氨系列 (3.0 MPaG)
+    // 根据MYCOM技术资料，M-II系列为水冷氨机，用于常规/中温热泵应用
+    'M-II Series (3.0 MPaG High Efficiency Ammonia)': {
+        warning: 140,  // °C - 标准氨制冷/热泵工况警告温度
+        trip: 150      // °C - 标准氨制冷/热泵工况跳闸温度
     }
 };
 
@@ -377,11 +517,15 @@ export function findDisplacementByModelString(modelString) {
 
 /**
  * 根据模式获取过滤后的品牌列表
- * @param {string} mode - 模式标识: 'm2', 'm3', 'm4', 'm5', 'm6'
+ * @param {string} mode - 模式标识: 'm2', 'm3', 'm4', 'm5', 'm6', 'm7'
  * @returns {string[]} 过滤后的品牌名称数组
  */
 export function getFilteredBrands(mode) {
-    // RCC Pro: 所有模式都使用 GEA Grasso 品牌
+    // Mode 7 (氨热泵): 支持 GEA Grasso 和 MYCOM 品牌
+    if (mode === 'm7') {
+        return ['GEA Grasso', 'MYCOM'];
+    }
+    // 其他模式: 使用 GEA Grasso 品牌
     return ['GEA Grasso'];
 }
 

@@ -251,12 +251,47 @@ function initCompressorModelSelectorsM7() {
                         <br>
                         <span class="text-xs text-gray-600">转速范围: ${minRpm}-${maxRpm} RPM</span>
                     `;
-                } else {
+                } else if (brand === 'MYCOM' && detail.referenceRpm && detail.rpm_range && Array.isArray(detail.rpm_range) && detail.rpm_range.length === 2) {
+                    // MYCOM系列：显示参考转速下的排量并注明rpm，同时显示转速范围
+                    const [minRpm, maxRpm] = detail.rpm_range;
+                    const referenceRpm = detail.referenceRpm;
                     modelDisplacementInfoM7.innerHTML = `
                         <span class="font-bold">理论排量:</span> <span id="model_displacement_value_m7">${displacement.toFixed(0)}</span> m³/h
+                        <span class="ml-2 text-xs text-gray-600">(@ ${referenceRpm} RPM)</span>
+                        <br>
+                        <span class="text-xs text-gray-600">转速范围: ${minRpm}-${maxRpm} RPM</span>
                     `;
+                } else {
+                    // 其他品牌或没有转速范围信息的，显示基本排量信息
+                    let infoHtml = `<span class="font-bold">理论排量:</span> <span id="model_displacement_value_m7">${displacement.toFixed(0)}</span> m³/h`;
+                    if (detail.referenceRpm) {
+                        infoHtml += ` <span class="ml-2 text-xs text-gray-600">(@ ${detail.referenceRpm} RPM)</span>`;
+                    }
+                    if (detail.rpm_range && Array.isArray(detail.rpm_range) && detail.rpm_range.length === 2) {
+                        const [minRpm, maxRpm] = detail.rpm_range;
+                        infoHtml += `<br><span class="text-xs text-gray-600">转速范围: ${minRpm}-${maxRpm} RPM</span>`;
+                    }
+                    modelDisplacementInfoM7.innerHTML = infoHtml;
                 }
                 modelDisplacementInfoM7.classList.remove('hidden');
+                
+                // 更新转速输入框的转速范围提示
+                if (detail.rpm_range && Array.isArray(detail.rpm_range) && detail.rpm_range.length === 2) {
+                    const [minRpm, maxRpm] = detail.rpm_range;
+                    const rpmInput = document.getElementById('rpm_m7');
+                    const rpmLabel = rpmInput?.parentElement?.querySelector('label');
+                    
+                    // 在转速输入框下方添加或更新转速范围提示
+                    let rpmRangeHint = rpmInput?.parentElement?.querySelector('.rpm-range-hint');
+                    if (!rpmRangeHint && rpmInput?.parentElement) {
+                        rpmRangeHint = document.createElement('div');
+                        rpmRangeHint.className = 'rpm-range-hint text-xs text-gray-500 mt-1 ml-1';
+                        rpmInput.parentElement.appendChild(rpmRangeHint);
+                    }
+                    if (rpmRangeHint) {
+                        rpmRangeHint.textContent = `转速范围: ${minRpm}-${maxRpm} RPM`;
+                    }
+                }
                 
                 // Automatically switch to volume mode (流量定义)
                 const volModeRadio = document.querySelector('input[name="flow_mode_m7"][value="vol"]');
@@ -282,9 +317,21 @@ function initCompressorModelSelectorsM7() {
                 }
             } else {
                 modelDisplacementInfoM7.classList.add('hidden');
+                // 清除转速范围提示
+                const rpmInput = document.getElementById('rpm_m7');
+                const rpmRangeHint = rpmInput?.parentElement?.querySelector('.rpm-range-hint');
+                if (rpmRangeHint) {
+                    rpmRangeHint.textContent = '';
+                }
             }
         } else {
             modelDisplacementInfoM7.classList.add('hidden');
+            // 清除转速范围提示
+            const rpmInput = document.getElementById('rpm_m7');
+            const rpmRangeHint = rpmInput?.parentElement?.querySelector('.rpm-range-hint');
+            if (rpmRangeHint) {
+                rpmRangeHint.textContent = '';
+            }
         }
     });
 
@@ -1123,23 +1170,36 @@ function calculateMode7() {
             const series = compressorSeriesM7?.value;
             const seriesLimits = getDischargeTempLimits(brand, series);
             
-            // RCC Pro: 对于热泵系列（V HP/XHP），优先使用系列限制（设计用于更高温度）
-            // 对于标准系列（V），使用更严格的限制（取两者中的较小值）
+            // RCC Pro: 对于热泵系列（V HP/XHP, MYCOM HS/HK），优先使用系列限制（设计用于更高温度）
+            // 对于标准系列（V, M-II），使用更严格的限制（取两者中的较小值）
+            // 特殊处理：Grasso 5HP 系列虽然包含 HP，但主要用于 CO2，如果使用氨制冷剂，应使用氨的限制
             const isHeatPumpSeries = series && (
-                series.includes('HP') || series.includes('XHP')
+                series.includes('HP') || 
+                series.includes('XHP') ||
+                series.includes('HS Series') ||  // MYCOM HS 系列（高压热泵）
+                series.includes('HK Series')     // MYCOM HK 系列（高压CO2/热泵）
             );
             
+            // 特殊处理：Grasso 5HP 系列主要用于 CO2，如果使用氨制冷剂，应使用氨的限制而不是 CO2 限制
+            const is5HPSeries = series && series.includes('5HP');
+            const shouldUseFluidLimits = is5HPSeries && fluid === 'R717' && seriesLimits && seriesLimits.warning < fluidLimits.warn;
+            
             let effectiveWarning, effectiveMax;
-            if (isHeatPumpSeries && seriesLimits) {
+            if (shouldUseFluidLimits) {
+                // Grasso 5HP 使用氨制冷剂时，使用氨的限制（因为 5HP 的限制是 CO2 的，对氨来说太保守）
+                effectiveWarning = fluidLimits.warn;
+                effectiveMax = fluidLimits.max;
+                console.log(`[RCC Pro] Grasso 5HP 使用氨制冷剂，使用氨的限制: 警告=${effectiveWarning}°C, 最大=${effectiveMax}°C`);
+            } else if (isHeatPumpSeries && seriesLimits) {
                 // 热泵系列：优先使用系列限制（设计用于更高温度工况）
                 effectiveWarning = seriesLimits.warning;
                 effectiveMax = seriesLimits.trip;
-                console.log(`[RCC Pro] 使用热泵系列温度限制: 警告=${effectiveWarning}°C, 最大=${effectiveMax}°C`);
+                console.log(`[RCC Pro] 使用热泵系列温度限制: 警告=${effectiveWarning}°C, 最大=${effectiveMax}°C (系列: ${series})`);
             } else {
                 // 标准系列：使用更严格的限制（取两者中的较小值）
                 effectiveWarning = Math.min(fluidLimits.warn, seriesLimits?.warning || fluidLimits.warn);
                 effectiveMax = Math.min(fluidLimits.max, seriesLimits?.trip || fluidLimits.max);
-                console.log(`[RCC Pro] 使用标准系列温度限制: 警告=${effectiveWarning}°C, 最大=${effectiveMax}°C`);
+                console.log(`[RCC Pro] 使用标准系列温度限制: 警告=${effectiveWarning}°C, 最大=${effectiveMax}°C (系列: ${series})`);
             }
             
             // 检查排气温度限制（使用修正后的温度）
