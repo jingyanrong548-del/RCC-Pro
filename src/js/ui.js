@@ -198,8 +198,8 @@ export function initUI() {
     function switchSubTab(subIdx, suppressAlert = false) {
         console.log(`[UI] Switching to sub-tab index: ${subIdx}`);
         
-        // 开通制冷热泵单级模块（M2，索引0）和氨热泵模块（M7，索引4），其他模块显示维护中
-        const enabledModules = [0, 4]; // M2和M7已开通
+        // 开通制冷热泵单级模块（M2，索引0）、单机双级模块（M5，索引2）和氨热泵模块（M7，索引4），其他模块显示维护中
+        const enabledModules = [0, 2, 4]; // M2、M5和M7已开通
         if (!enabledModules.includes(subIdx)) {
             // 只在用户主动点击时显示提示，初始化时不显示
             if (!suppressAlert) {
@@ -379,12 +379,12 @@ export function initUI() {
     });
 
     // 子标签事件监听
-    // 开通制冷热泵单级模块（M2）和氨热泵模块（M7），其他模块显示维护中
-    const enabledSubTabs = ['sub-tab-btn-m2', 'sub-tab-btn-m7']; // M2和M7已开通
+    // 开通制冷热泵单级模块（M2）、单机双级模块（M5）和氨热泵模块（M7），其他模块显示维护中
+    const enabledSubTabs = ['sub-tab-btn-m2', 'sub-tab-btn-m5', 'sub-tab-btn-m7']; // M2、M5和M7已开通
     subTabs.forEach((t, i) => {
         const btn = document.getElementById(t.btnId);
         if (btn) {
-            // M2和M7可用
+            // M2、M5和M7可用
             if (enabledSubTabs.includes(t.btnId)) {
                 btn.addEventListener('click', () => switchSubTab(i));
                 // 确保按钮可点击，移除禁用样式
@@ -491,7 +491,7 @@ export function initUI() {
         // 如果是制冷热泵模式，切换到对应的子标签
         if (navInfo.mainIdx === 0 && navInfo.subIdx !== null) {
             // 如果历史记录是维护中的模块，直接切换到M2（默认），不显示alert
-            const enabledModules = [0, 4]; // M2和M7已开通
+            const enabledModules = [0, 2, 4]; // M2、M5和M7已开通
             const targetSubIdx = enabledModules.includes(navInfo.subIdx) ? navInfo.subIdx : 0;
             setTimeout(() => switchSubTab(targetSubIdx, true), 50);
         }

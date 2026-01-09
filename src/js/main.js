@@ -92,13 +92,13 @@ document.addEventListener('DOMContentLoaded', () => {
     APP_VERSION.updateDisplay();
 
     // 4. 定义需要被更新状态的元素
-    // 开通制冷热泵单级模块（M2）和氨热泵模块（M7），其他模块显示维护中
+    // 开通制冷热泵单级模块（M2）、单机双级模块（M5）和氨热泵模块（M7），其他模块显示维护中
     const buttons = [
         document.getElementById('calc-button-mode-2'),
         // document.getElementById('calc-button-mode-3'),
         // document.getElementById('calc-button-mode-3-two-stage'),
         // document.getElementById('calc-button-mode-4'),
-        // document.getElementById('calc-button-mode-5'),
+        document.getElementById('calc-button-mode-5'),
         // document.getElementById('calc-button-mode-6'),
         document.getElementById('calc-button-mode-7')
     ];
@@ -109,13 +109,14 @@ document.addEventListener('DOMContentLoaded', () => {
         // { select: document.getElementById('fluid_m3_two_stage'), info: document.getElementById('fluid-info-m3-two-stage') },
         // { select: document.getElementById('fluid_m4_lt'), info: document.getElementById('fluid-info-m4-lt') },
         // { select: document.getElementById('fluid_m4_ht'), info: document.getElementById('fluid-info-m4-ht') },
-        // { select: document.getElementById('fluid_m5'), info: document.getElementById('fluid-info-m5') },
+        { select: document.getElementById('fluid_m5'), info: document.getElementById('fluid-info-m5') },
         // { select: document.getElementById('fluid_m6'), info: document.getElementById('fluid-info-m6') },
         { select: document.getElementById('fluid_m7'), info: document.getElementById('fluid-info-m7') }
     ];
 
     const buttonTexts = {
         'calc-button-mode-2': i18next.t('common.calculate'),
+        'calc-button-mode-5': i18next.t('common.calculate'),
         'calc-button-mode-7': i18next.t('common.calculate')
     };
     
@@ -125,7 +126,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'calc-button-mode-3',
         'calc-button-mode-3-two-stage',
         'calc-button-mode-4',
-        'calc-button-mode-5',
+        // 'calc-button-mode-5', // 已开通（活塞压缩机单机双级）
         'calc-button-mode-6'
     ];
     
@@ -145,12 +146,12 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log("CoolProp loaded successfully.");
 
             // 7. 在CoolProp加载成功后，才初始化依赖于它的计算模块
-            // 开通制冷热泵单级模块（M2）和氨热泵模块（M7），其他模块显示维护中
+            // 开通制冷热泵单级模块（M2）、单机双级模块（M5）和氨热泵模块（M7），其他模块显示维护中
             initMode2(CP);
             // initMode3(CP);
             // initMode3TwoStage(CP);
             // initMode4(CP);
-            // initMode5(CP);
+            initMode5(CP);  // 活塞压缩机单机双级
             // initMode6(CP);
             initMode7(CP);
 
@@ -170,12 +171,12 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             
             // 10. [修复] 在所有模块都初始化完毕后，再手动触发一次初始的经验效率计算
-            // 开通制冷热泵单级模块（M2）和氨热泵模块（M7），其他模块显示维护中
+            // 开通制冷热泵单级模块（M2）、单机双级模块（M5）和氨热泵模块（M7），其他模块显示维护中
             triggerMode2EfficiencyUpdate();
             // triggerMode3EfficiencyUpdate();
             // triggerMode3TwoStageEfficiencyUpdate();
             // triggerMode4EfficiencyUpdate();
-            // triggerMode5EfficiencyUpdate();
+            triggerMode5EfficiencyUpdate();  // 活塞压缩机单机双级
             // triggerMode6EfficiencyUpdate();
             triggerMode7EfficiencyUpdate();
 

@@ -50,6 +50,8 @@ let compressorBrandM2, compressorSeriesM2, compressorModelM2, modelDisplacementI
 let flowM3hM2;
 // Cylinder Head Cooling (缸头冷却)
 let cylinderHeadCoolingEnabledM2, cylinderHeadWaterInletTempM2, cylinderHeadWaterOutletTempM2, cylinderHeadQM2;
+let cylinderHeadInputModeM2, cylinderHeadPowerInputM2, cylinderHeadQDirectM2;
+let cylinderHeadWaterTempModeM2, cylinderHeadDirectPowerModeM2;
 
 // Button States - 使用i18n
 const getBtnTextCalculate = () => i18next.t('mode2.calculatePerformance');
@@ -854,52 +856,75 @@ function calculateMode2() {
             }
             
             if (isCylinderHeadCoolingEnabled) {
-                // 读取缸头冷却水参数
-                const T_head_water_in = parseFloat(cylinderHeadWaterInletTempM2?.value) || 30;
-                const T_head_water_out = parseFloat(cylinderHeadWaterOutletTempM2?.value) || 35;
+                // 读取输入模式
+                const inputModeRadio = document.querySelector('input[name="cylinder_head_input_mode_m2"]:checked');
+                const inputMode = inputModeRadio ? inputModeRadio.value : 'water_temp';
                 
-                // =========================================================
-                // 安全检查：防止液击（Liquid Hammer）
-                // =========================================================
-                // 关键安全规则：进水温度必须 > (蒸发温度 + 10K)
-                // 如果水温太低，会导致吸气腔内结露甚至液化，引发严重的液击风险
-                const min_head_water_temp = Te_C + 10; // 最小允许进水温度
-                
-                // 验证出水温度必须大于进水温度
-                if (T_head_water_out <= T_head_water_in) {
-                    // 出水温度无效：显示错误
-                    cylinderHeadCoolingError = `缸头冷却出水温度 (${T_head_water_out.toFixed(1)}°C) 必须大于进水温度 (${T_head_water_in.toFixed(1)}°C)。`;
-                    console.error(`[RCC Pro] ${cylinderHeadCoolingError}`);
-                    console.log(`[RCC Pro] 缸头冷却参数无效，不启用缸头冷却`);
-                    // 如果参数无效，不启用缸头冷却
-                    T_2a_after_head_cooling_C = T_2a_final_C; // 保持原始排气温度
-                } else if (T_head_water_in < min_head_water_temp) {
-                    // 安全检查失败：显示错误
-                    cylinderHeadCoolingError = `液击风险！缸头冷却进水温度 (${T_head_water_in.toFixed(1)}°C) 过低。必须 > ${min_head_water_temp.toFixed(1)}°C (蒸发温度 + 10K) 以防止吸气腔结露。`;
-                    console.error(`[RCC Pro] ${cylinderHeadCoolingError}`);
-                    console.log(`[RCC Pro] 缸头冷却安全检查失败，不启用缸头冷却`);
-                    // 如果安全检查失败，不启用缸头冷却
-                    T_2a_after_head_cooling_C = T_2a_final_C; // 保持原始排气温度
-                } else {
-                    // 安全检查通过，计算缸头冷却负荷
-                    if (CYLINDER_HEAD_COOLING_MODE === 'target_dt') {
-                        // 目标温降模式：根据目标温降计算所需负荷（能量守恒）
-                        const T_target_C = Math.max(T_2a_final_C - CYLINDER_HEAD_TEMP_REDUCTION, Te_C + 20);
-                        const T_target_K = T_target_C + 273.15;
-                        const h_target = CP_INSTANCE.PropsSI('H', 'T', T_target_K, 'P', Pc_Pa, fluid);
-                        const delta_h = Math.max(0, h_2a_final - h_target); // J/kg
-                        Q_cylinder_head_W = m_dot_suc * delta_h; // J/s = W
-                        const implied_factor = W_shaft_W > 0 ? (Q_cylinder_head_W / W_shaft_W) : 0;
-                        console.log(`[RCC Pro] 缸头冷却（目标温降模式）:`);
-                        console.log(`  目标温降: ${CYLINDER_HEAD_TEMP_REDUCTION} °C, 目标排气温度: ${T_target_C.toFixed(1)} °C`);
-                        console.log(`  计算所需负荷: ${(Q_cylinder_head_W/1000).toFixed(2)} kW (约 ${(implied_factor*100).toFixed(1)}% 轴功率)`);
+                if (inputMode === 'direct_power') {
+                    // =========================================================
+                    // 直接输入模式：直接读取输入的负荷值
+                    // =========================================================
+                    const Q_cylinder_head_kW = parseFloat(cylinderHeadPowerInputM2?.value) || 0;
+                    if (Q_cylinder_head_kW < 0) {
+                        cylinderHeadCoolingError = `缸头冷却负荷不能为负值。`;
+                        console.error(`[RCC Pro] ${cylinderHeadCoolingError}`);
+                        Q_cylinder_head_W = 0;
+                        T_2a_after_head_cooling_C = T_2a_final_C;
                     } else {
-                        // 固定功率模式：按轴功率百分比带走热量
-                        Q_cylinder_head_W = W_shaft_W * CYLINDER_HEAD_COOLING_FACTOR;
-                        console.log(`[RCC Pro] 缸头冷却（固定功率模式）: 负荷 ${(Q_cylinder_head_W/1000).toFixed(2)} kW (${(CYLINDER_HEAD_COOLING_FACTOR*100).toFixed(0)}% 轴功率)`);
+                        Q_cylinder_head_W = Q_cylinder_head_kW * 1000; // 转换为 W
+                        console.log(`[RCC Pro] 缸头冷却（直接输入模式）: 负荷 ${Q_cylinder_head_kW.toFixed(2)} kW`);
                     }
+                } else {
+                    // =========================================================
+                    // 水温计算模式：通过水温计算负荷
+                    // =========================================================
+                    // 读取缸头冷却水参数
+                    const T_head_water_in = parseFloat(cylinderHeadWaterInletTempM2?.value) || 30;
+                    const T_head_water_out = parseFloat(cylinderHeadWaterOutletTempM2?.value) || 35;
                     
-                    // 注意：实际的温度降低量将在后续根据能量守恒计算（见 h_2a_after_head_cooling 计算）
+                    // =========================================================
+                    // 安全检查：防止液击（Liquid Hammer）
+                    // =========================================================
+                    // 关键安全规则：进水温度必须 > (蒸发温度 + 10K)
+                    // 如果水温太低，会导致吸气腔内结露甚至液化，引发严重的液击风险
+                    const min_head_water_temp = Te_C + 10; // 最小允许进水温度
+                    
+                    // 验证出水温度必须大于进水温度
+                    if (T_head_water_out <= T_head_water_in) {
+                        // 出水温度无效：显示错误
+                        cylinderHeadCoolingError = `缸头冷却出水温度 (${T_head_water_out.toFixed(1)}°C) 必须大于进水温度 (${T_head_water_in.toFixed(1)}°C)。`;
+                        console.error(`[RCC Pro] ${cylinderHeadCoolingError}`);
+                        console.log(`[RCC Pro] 缸头冷却参数无效，不启用缸头冷却`);
+                        // 如果参数无效，不启用缸头冷却
+                        T_2a_after_head_cooling_C = T_2a_final_C; // 保持原始排气温度
+                    } else if (T_head_water_in < min_head_water_temp) {
+                        // 安全检查失败：显示错误
+                        cylinderHeadCoolingError = `液击风险！缸头冷却进水温度 (${T_head_water_in.toFixed(1)}°C) 过低。必须 > ${min_head_water_temp.toFixed(1)}°C (蒸发温度 + 10K) 以防止吸气腔结露。`;
+                        console.error(`[RCC Pro] ${cylinderHeadCoolingError}`);
+                        console.log(`[RCC Pro] 缸头冷却安全检查失败，不启用缸头冷却`);
+                        // 如果安全检查失败，不启用缸头冷却
+                        T_2a_after_head_cooling_C = T_2a_final_C; // 保持原始排气温度
+                    } else {
+                        // 安全检查通过，计算缸头冷却负荷
+                        if (CYLINDER_HEAD_COOLING_MODE === 'target_dt') {
+                            // 目标温降模式：根据目标温降计算所需负荷（能量守恒）
+                            const T_target_C = Math.max(T_2a_final_C - CYLINDER_HEAD_TEMP_REDUCTION, Te_C + 20);
+                            const T_target_K = T_target_C + 273.15;
+                            const h_target = CP_INSTANCE.PropsSI('H', 'T', T_target_K, 'P', Pc_Pa, fluid);
+                            const delta_h = Math.max(0, h_2a_final - h_target); // J/kg
+                            Q_cylinder_head_W = m_dot_suc * delta_h; // J/s = W
+                            const implied_factor = W_shaft_W > 0 ? (Q_cylinder_head_W / W_shaft_W) : 0;
+                            console.log(`[RCC Pro] 缸头冷却（目标温降模式）:`);
+                            console.log(`  目标温降: ${CYLINDER_HEAD_TEMP_REDUCTION} °C, 目标排气温度: ${T_target_C.toFixed(1)} °C`);
+                            console.log(`  计算所需负荷: ${(Q_cylinder_head_W/1000).toFixed(2)} kW (约 ${(implied_factor*100).toFixed(1)}% 轴功率)`);
+                        } else {
+                            // 固定功率模式：按轴功率百分比带走热量
+                            Q_cylinder_head_W = W_shaft_W * CYLINDER_HEAD_COOLING_FACTOR;
+                            console.log(`[RCC Pro] 缸头冷却（固定功率模式）: 负荷 ${(Q_cylinder_head_W/1000).toFixed(2)} kW (${(CYLINDER_HEAD_COOLING_FACTOR*100).toFixed(0)}% 轴功率)`);
+                        }
+                        
+                        // 注意：实际的温度降低量将在后续根据能量守恒计算（见 h_2a_after_head_cooling 计算）
+                    }
                 }
             } else {
                 console.log('[RCC Pro] 缸头冷却未启用');
@@ -1301,6 +1326,33 @@ function calculateMode2() {
             setButtonFresh2();
             if(printButtonM2) printButtonM2.disabled = false;
 
+            // 更新缸头冷却显示
+            const inputModeRadio = document.querySelector('input[name="cylinder_head_input_mode_m2"]:checked');
+            const inputMode = inputModeRadio ? inputModeRadio.value : 'water_temp';
+            
+            if (cylinderHeadQM2) {
+                if (isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError && Q_cylinder_head_W > 0) {
+                    if (inputMode === 'water_temp') {
+                        // 水温模式：显示计算出的负荷
+                        cylinderHeadQM2.textContent = (Q_cylinder_head_W / 1000).toFixed(2);
+                    } else {
+                        // 直接输入模式：显示输入的负荷
+                        cylinderHeadQM2.textContent = '--';
+                    }
+                } else {
+                    cylinderHeadQM2.textContent = '--';
+                }
+            }
+            
+            if (cylinderHeadQDirectM2) {
+                if (isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError && inputMode === 'direct_power') {
+                    const Q_cylinder_head_kW = parseFloat(cylinderHeadPowerInputM2?.value) || 0;
+                    cylinderHeadQDirectM2.textContent = Q_cylinder_head_kW.toFixed(2);
+                } else {
+                    cylinderHeadQDirectM2.textContent = '--';
+                }
+            }
+
             // 更新 lastCalculationData，保留图表数据
             lastCalculationData.fluid = fluid;
             lastCalculationData.statePoints = statePoints;
@@ -1367,6 +1419,11 @@ export function initMode2(CP) {
     cylinderHeadWaterInletTempM2 = document.getElementById('cylinder_head_water_inlet_temp_m2');
     cylinderHeadWaterOutletTempM2 = document.getElementById('cylinder_head_water_outlet_temp_m2');
     cylinderHeadQM2 = document.getElementById('cylinder_head_q_m2');
+    cylinderHeadInputModeM2 = document.querySelectorAll('input[name="cylinder_head_input_mode_m2"]');
+    cylinderHeadPowerInputM2 = document.getElementById('cylinder_head_power_input_m2');
+    cylinderHeadQDirectM2 = document.getElementById('cylinder_head_q_direct_m2');
+    cylinderHeadWaterTempModeM2 = document.getElementById('cylinder-head-water-temp-mode-m2');
+    cylinderHeadDirectPowerModeM2 = document.getElementById('cylinder-head-direct-power-mode-m2');
 
     // Initialize compressor model selectors
     if (compressorBrandM2 && compressorSeriesM2 && compressorModelM2) {
@@ -1426,6 +1483,20 @@ export function initMode2(CP) {
                 if (settingsDiv) settingsDiv.classList.toggle('hidden', !isEnabled);
                 if (placeholderDiv) placeholderDiv.classList.toggle('hidden', isEnabled);
                 setButtonStale2();
+            });
+        }
+        
+        // Cylinder Head Cooling input mode toggle
+        if (cylinderHeadInputModeM2 && cylinderHeadInputModeM2.length > 0) {
+            cylinderHeadInputModeM2.forEach(radio => {
+                radio.addEventListener('change', () => {
+                    const mode = radio.value;
+                    if (cylinderHeadWaterTempModeM2 && cylinderHeadDirectPowerModeM2) {
+                        cylinderHeadWaterTempModeM2.classList.toggle('hidden', mode !== 'water_temp');
+                        cylinderHeadDirectPowerModeM2.classList.toggle('hidden', mode !== 'direct_power');
+                    }
+                    setButtonStale2();
+                });
             });
         }
 

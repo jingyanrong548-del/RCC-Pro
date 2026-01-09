@@ -440,49 +440,52 @@ export const COMPRESSOR_MODELS = {
                 debug_reference: 'At 970 rpm, 8MII displacement should be 826 m³/h'
             }
         ],
-        'WBHE Series (Large Size Single-Stage)': [
+        'WBHE Series (Two Stage Open Type)': [
             {
-                model: '4WBHE',
-                displacement: 309,  // 参考转速970rpm下的理论排量（样本值）
+                model: '42WBHE',
+                displacement: 309,  // 低压级排量 @970rpm（样本值）
+                disp_lp: 309,  // 低压级排量 (m³/h) @970rpm
+                disp_hp: 155,  // 高压级排量 (m³/h) @970rpm
+                vi_ratio: 309 / 155,  // 容积比 (Vi,L / Vi,H) ≈ 1.99
                 referenceRpm: 970,  // 参考转速（样本标注的转速）
-                referenceDisplacement: 309,  // 参考转速下的排量（样本值）
-                swept_volume_max_m3h: 382.22,  // 最大转速1200rpm下的扫气量（用于计算）
-                cylinders: 4,
+                referenceDisplacement: 309,  // 参考转速下的低压级排量（样本值）
+                swept_volume_max_m3h: 382.22,  // 最大转速1200rpm下的低压级扫气量（用于计算）
+                cylinders_lp: 4,  // 低压级气缸数
+                cylinders_hp: 2,  // 高压级气缸数
+                cylinders: 6,  // 总气缸数（4+2）
+                bore_mm: 130,  // 缸径（样本数据）
+                stroke_mm: 100,  // 行程（样本数据）
                 max_rpm: 1200,
                 rpm_range: [800, 1200],  // 样本标注：800-1200 rpm
                 clearance_factor: 0.04,  // 大型压缩机典型值
-                refrigerants: ['R717', 'Propane', 'R134a', 'R404A', 'R507A', 'R23'],
-                // 样本数据：4WBHE @970rpm = 309 m³/h，缸径130mm，行程100mm
-                debug_reference: 'At 970 rpm, 4WBHE displacement should be 309 m³/h (sample data)'
+                refrigerants: ['R717', 'R404A', 'R507A'],  // 样本数据：氨 / HFCs (R404A, R507A)
+                capacity_control: [100, 50],  // 容量控制：100/50（样本数据）
+                // 样本数据：42WBHE @970rpm = 低段 309 m³/h, 高段 155 m³/h，缸径130mm，行程100mm
+                // 样本说明：超过15,000台使用记录，行业领先的可靠性，适用于大型深冷应用
+                debug_reference: 'At 970 rpm, 42WBHE: LP=309 m³/h, HP=155 m³/h (sample data)'
             },
             {
-                model: '6WBHE',
-                displacement: 464,  // 参考转速970rpm下的理论排量（样本值）
+                model: '62WBHE',
+                displacement: 464,  // 低压级排量 @970rpm（样本值）
+                disp_lp: 464,  // 低压级排量 (m³/h) @970rpm
+                disp_hp: 155,  // 高压级排量 (m³/h) @970rpm
+                vi_ratio: 464 / 155,  // 容积比 (Vi,L / Vi,H) ≈ 2.99
                 referenceRpm: 970,  // 参考转速（样本标注的转速）
-                referenceDisplacement: 464,  // 参考转速下的排量（样本值）
-                swept_volume_max_m3h: 573.40,  // 最大转速1200rpm下的扫气量（用于计算）
-                cylinders: 6,
+                referenceDisplacement: 464,  // 参考转速下的低压级排量（样本值）
+                swept_volume_max_m3h: 573.40,  // 最大转速1200rpm下的低压级扫气量（用于计算）
+                cylinders_lp: 6,  // 低压级气缸数
+                cylinders_hp: 2,  // 高压级气缸数
+                cylinders: 8,  // 总气缸数（6+2）
+                bore_mm: 130,  // 缸径（样本数据）
+                stroke_mm: 100,  // 行程（样本数据）
                 max_rpm: 1200,
                 rpm_range: [800, 1200],  // 样本标注：800-1200 rpm
                 clearance_factor: 0.04,  // 大型压缩机典型值
-                refrigerants: ['R717', 'Propane', 'R134a', 'R404A', 'R507A', 'R23'],
-                // 样本数据：6WBHE @970rpm = 464 m³/h，缸径130mm，行程100mm
-                debug_reference: 'At 970 rpm, 6WBHE displacement should be 464 m³/h (sample data)'
-            },
-            {
-                model: '8WBHE',
-                displacement: 618,  // 参考转速970rpm下的理论排量（样本值）
-                referenceRpm: 970,  // 参考转速（样本标注的转速）
-                referenceDisplacement: 618,  // 参考转速下的排量（样本值）
-                swept_volume_max_m3h: 764.54,  // 最大转速1200rpm下的扫气量（用于计算）
-                cylinders: 8,
-                max_rpm: 1200,
-                rpm_range: [800, 1200],  // 样本标注：800-1200 rpm
-                clearance_factor: 0.04,  // 大型压缩机典型值
-                refrigerants: ['R717', 'Propane', 'R134a', 'R404A', 'R507A', 'R23'],
-                // 样本数据：8WBHE @970rpm = 618 m³/h，缸径130mm，行程100mm
-                // 样本说明：超过15,000台使用记录，行业领先的可靠性
-                debug_reference: 'At 970 rpm, 8WBHE displacement should be 618 m³/h (sample data)'
+                refrigerants: ['R717', 'R404A', 'R507A'],  // 样本数据：氨 / HFCs (R404A, R507A)
+                capacity_control: [100, 66, 33],  // 容量控制：100/66/33（样本数据）
+                // 样本数据：62WBHE @970rpm = 低段 464 m³/h, 高段 155 m³/h，缸径130mm，行程100mm
+                // 样本说明：超过15,000台使用记录，行业领先的可靠性，适用于大型深冷应用
+                debug_reference: 'At 970 rpm, 62WBHE: LP=464 m³/h, HP=155 m³/h (sample data)'
             }
         ],
         'WA Series (Medium Size Single-Stage)': [
@@ -846,10 +849,10 @@ export const DISCHARGE_TEMP_LIMITS = {
         warning: 140,  // °C - 标准氨制冷/热泵工况警告温度
         trip: 150      // °C - 标准氨制冷/热泵工况跳闸温度
     },
-    // MYCOM WBHE Series (Large Size Single-Stage) - 大型单级系列
-    // 根据MYCOM技术资料，WBHE系列为大型单级压缩机，超过15000台使用记录
-    // 设计压力与标准氨系列类似，用于标准制冷/热泵应用
-    'WBHE Series (Large Size Single-Stage)': {
+    // MYCOM WBHE Series (Two Stage Open Type) - 双级开放式系列
+    // 根据MYCOM技术资料，WBHE系列为大型双级压缩机，超过15000台使用记录
+    // 设计压力与标准氨系列类似，用于标准制冷/热泵应用（特别是深冷应用）
+    'WBHE Series (Two Stage Open Type)': {
         warning: 140,  // °C - 标准氨制冷/热泵工况警告温度
         trip: 150      // °C - 标准氨制冷/热泵工况跳闸温度
     },
@@ -935,8 +938,8 @@ export function findDisplacementByModelString(modelString) {
  * @returns {string[]} 过滤后的品牌名称数组
  */
 export function getFilteredBrands(mode) {
-    // Mode 2 (制冷热泵单级) 和 Mode 7 (氨热泵): 支持 GEA Grasso 和 MYCOM 品牌
-    if (mode === 'm2' || mode === 'm7') {
+    // Mode 2 (制冷热泵单级)、Mode 5 (活塞压缩机单机双级) 和 Mode 7 (氨热泵): 支持 GEA Grasso 和 MYCOM 品牌
+    if (mode === 'm2' || mode === 'm5' || mode === 'm7') {
         return ['GEA Grasso', 'MYCOM'];
     }
     // 其他模式: 使用 GEA Grasso 品牌
@@ -951,7 +954,17 @@ export function getFilteredBrands(mode) {
  * @returns {string[]} 过滤后的系列名称数组
  */
 export function getFilteredSeriesByBrand(mode, brand, level = null) {
-    // RCC Pro: GEA Grasso 品牌的所有系列都可用
+    // Mode 5 (单机双级): MYCOM 品牌只返回 WBHE 系列，GEA Grasso 品牌返回所有系列
+    if (mode === 'm5') {
+        if (brand === 'MYCOM') {
+            return ['WBHE Series (Two Stage Open Type)'];
+        } else if (brand === 'GEA Grasso') {
+            // GEA Grasso 品牌的所有系列都可用
+            return getSeriesByBrand(brand);
+        }
+    }
+    
+    // 其他模式: 返回所有系列
     return getSeriesByBrand(brand);
 }
 

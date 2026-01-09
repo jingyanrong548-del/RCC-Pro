@@ -319,7 +319,7 @@ function initCompressorModelSelectorsM7() {
                 
                 // Auto-fill flow_m3h_m7
                 if (flowM3hM7) {
-                    flowM3hM7.value = displacement.toFixed(2);
+                    flowM3hM7.value = displayDisplacement.toFixed(2);
                     setButtonStale7();
                 }
             } else {

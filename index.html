@@ -1126,19 +1126,51 @@
                             </div>
 
                             <div id="cylinder-head-cooling-settings-m2" class="hidden space-y-4 relative z-10 animate-fade-in">
-                                <div class="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label class="block text-xs text-gray-500 mb-1 ml-1">进水温度 (°C)</label>
-                                        <input type="number" id="cylinder_head_water_inlet_temp_m2" value="30" step="0.1" min="10" max="80" class="glass-input block w-full rounded-lg py-1.5 px-2 text-xs text-gray-900 font-medium">
-                                        <p class="text-[10px] text-gray-400 mt-0.5 ml-1">必须 > 蒸发温度 + 10K</p>
-                                    </div>
-                                    <div>
-                                        <label class="block text-xs text-gray-500 mb-1 ml-1">出水温度 (°C)</label>
-                                        <input type="number" id="cylinder_head_water_outlet_temp_m2" value="35" step="0.1" min="15" max="100" class="glass-input block w-full rounded-lg py-1.5 px-2 text-xs text-gray-900 font-medium">
-                                        <p class="text-[10px] text-gray-400 mt-0.5 ml-1">必须 > 进水温度</p>
+                                <!-- 输入模式选择 -->
+                                <div class="mb-3">
+                                    <label class="block text-xs text-gray-500 mb-2 ml-1">输入模式</label>
+                                    <div class="flex gap-2">
+                                        <label class="flex-1 cursor-pointer">
+                                            <input type="radio" name="cylinder_head_input_mode_m2" value="water_temp" class="sr-only peer" checked>
+                                            <div class="px-3 py-2 text-xs font-medium text-center rounded-lg border-2 border-gray-200 peer-checked:border-cyan-500 peer-checked:bg-cyan-50 peer-checked:text-cyan-700 transition-all">
+                                                水温计算
+                                            </div>
+                                        </label>
+                                        <label class="flex-1 cursor-pointer">
+                                            <input type="radio" name="cylinder_head_input_mode_m2" value="direct_power" class="sr-only peer">
+                                            <div class="px-3 py-2 text-xs font-medium text-center rounded-lg border-2 border-gray-200 peer-checked:border-cyan-500 peer-checked:bg-cyan-50 peer-checked:text-cyan-700 transition-all">
+                                                直接输入
+                                            </div>
+                                        </label>
                                     </div>
                                 </div>
-                                <div class="text-[10px] text-gray-600">换热量: <span id="cylinder_head_q_m2" class="font-bold text-cyan-700">--</span> kW</div>
+                                
+                                <!-- 水温计算模式 -->
+                                <div id="cylinder-head-water-temp-mode-m2" class="space-y-4">
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-xs text-gray-500 mb-1 ml-1">进水温度 (°C)</label>
+                                            <input type="number" id="cylinder_head_water_inlet_temp_m2" value="30" step="0.1" min="10" max="80" class="glass-input block w-full rounded-lg py-1.5 px-2 text-xs text-gray-900 font-medium">
+                                            <p class="text-[10px] text-gray-400 mt-0.5 ml-1">必须 > 蒸发温度 + 10K</p>
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs text-gray-500 mb-1 ml-1">出水温度 (°C)</label>
+                                            <input type="number" id="cylinder_head_water_outlet_temp_m2" value="35" step="0.1" min="15" max="100" class="glass-input block w-full rounded-lg py-1.5 px-2 text-xs text-gray-900 font-medium">
+                                            <p class="text-[10px] text-gray-400 mt-0.5 ml-1">必须 > 进水温度</p>
+                                        </div>
+                                    </div>
+                                    <div class="text-[10px] text-gray-600">换热量: <span id="cylinder_head_q_m2" class="font-bold text-cyan-700">--</span> kW</div>
+                                </div>
+                                
+                                <!-- 直接输入模式 -->
+                                <div id="cylinder-head-direct-power-mode-m2" class="hidden space-y-4">
+                                    <div>
+                                        <label class="block text-xs text-gray-500 mb-1 ml-1">缸头冷却负荷 (kW)</label>
+                                        <input type="number" id="cylinder_head_power_input_m2" value="0" step="0.1" min="0" max="1000" class="glass-input block w-full rounded-lg py-1.5 px-2 text-xs text-gray-900 font-medium">
+                                        <p class="text-[10px] text-gray-400 mt-0.5 ml-1">直接输入缸头冷却负荷，典型值约 4% 轴功率</p>
+                                    </div>
+                                    <div class="text-[10px] text-gray-600">输入负荷: <span id="cylinder_head_q_direct_m2" class="font-bold text-cyan-700">--</span> kW</div>
+                                </div>
                             </div>
                             <div id="cylinder-head-cooling-placeholder-m2" class="text-xs text-gray-400 italic py-1 text-center">缸头冷却未启用</div>
                         </div>
@@ -1741,8 +1773,14 @@
                                         <input type="number" id="temp_cond_m5" value="40" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium">
                                     </div>
                                     <div>
-                                        <label class="block text-xs text-gray-500 mb-1 ml-1">过热度 (K)</label>
-                                        <input type="number" id="superheat_m5" value="0" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium">
+                                        <label class="block text-xs text-gray-500 mb-1 ml-1">有用过热度 (K)</label>
+                                        <input type="number" id="useful_superheat_m5" value="0" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
+                                        <p class="text-[10px] text-gray-400 mt-0.5 ml-1">蒸发器内过热，计入制冷量</p>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs text-gray-500 mb-1 ml-1">总过热度 (K)</label>
+                                        <input type="number" id="superheat_m5" value="0" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-medium" required>
+                                        <p class="text-[10px] text-gray-400 mt-0.5 ml-1">压缩机吸气口过热</p>
                                     </div>
                                     <div>
                                         <label class="block text-xs text-gray-500 mb-1 ml-1">过冷度 (K)</label>
@@ -1832,29 +1870,6 @@
                                 <div class="glass-panel rounded-3xl p-6 relative overflow-hidden group">
                                     <div class="flex items-center justify-between mb-5 z-10 relative">
                                         <div class="flex items-center space-x-3">
-                                            <div class="w-8 h-8 rounded-xl bg-teal-100 flex items-center justify-center text-teal-600 shadow-sm">
-                                                <span class="font-bold text-xs">ECO</span>
-                                            </div>
-                                            <h3 class="text-base font-bold text-gray-900">经济器 (过冷器)</h3>
-                                        </div>
-                                    </div>
-                                    <div class="space-y-5 relative z-10">
-                                        <div class="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <label class="block text-xs text-gray-500 mb-1 ml-1">补气过热 (K)</label>
-                                                <input type="number" id="eco_superheat_m5" value="0" step="any" class="glass-input block w-full rounded-xl py-2 px-3 text-gray-900">
-                                            </div>
-                                            <div>
-                                                <label class="block text-xs text-gray-500 mb-1 ml-1">换热温差 (K)</label>
-                                                <input type="number" id="eco_dt_m5" value="5.0" step="any" class="glass-input block w-full rounded-xl py-2 px-3 text-gray-900">
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="glass-panel rounded-3xl p-6 relative overflow-hidden group">
-                                    <div class="flex items-center justify-between mb-5 z-10 relative">
-                                        <div class="flex items-center space-x-3">
                                             <div class="w-8 h-8 rounded-xl bg-orange-100 flex items-center justify-center text-orange-600 shadow-sm">
                                                 <span class="font-bold text-xs">SLHX</span>
                                             </div>
@@ -1875,13 +1890,121 @@
                                     <div id="slhx-placeholder-m5" class="text-xs text-gray-400 italic py-1 text-center">SLHX Disabled</div>
                                 </div>
 
-                                <div>
-                                    <label class="block text-xs font-bold text-blue-600 mb-1 ml-1">设定排气温度 T_mid (°C) - 低压级</label>
-                                    <input type="number" id="temp_discharge_mid_m5" value="59.1" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-bold bg-blue-50/50 border-blue-100 focus:ring-blue-200" placeholder="留空则使用计算值">
+                                <!-- ECO (中间冷却器) -->
+                                <div class="glass-panel rounded-3xl p-6 relative overflow-hidden group">
+                                    <div class="flex items-center justify-between mb-5 z-10 relative">
+                                        <div class="flex items-center space-x-3">
+                                            <div class="w-8 h-8 rounded-xl bg-green-100 flex items-center justify-center text-green-600 shadow-sm">
+                                                <span class="font-bold text-xs">ECO</span>
+                                            </div>
+                                            <h3 class="text-base font-bold text-gray-900">中间冷却器 (Intercooler ECO)</h3>
+                                        </div>
+                                        <label class="relative inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" id="enable_eco_m5" class="sr-only peer">
+                                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all after:shadow-sm peer-checked:bg-green-500 transition-colors duration-300 ease-ios"></div>
+                                        </label>
+                                    </div>
+                                    <div id="eco-settings-m5" class="hidden space-y-5 relative z-10 animate-fade-in">
+                                        <!-- ECO 类型选择 -->
+                                        <div>
+                                            <label class="block text-xs text-gray-500 mb-2 ml-1">ECO 类型</label>
+                                            <div class="bg-gray-100/80 p-1 rounded-xl flex">
+                                                <label class="flex-1 cursor-pointer">
+                                                    <input type="radio" name="eco_type_m5" value="flash_tank" class="peer sr-only" checked>
+                                                    <div class="py-1.5 text-xs font-semibold text-gray-500 text-center rounded-lg transition-all peer-checked:bg-white peer-checked:text-green-600 peer-checked:shadow-sm">闪蒸罐</div>
+                                                </label>
+                                                <label class="flex-1 cursor-pointer">
+                                                    <input type="radio" name="eco_type_m5" value="subcooler" class="peer sr-only">
+                                                    <div class="py-1.5 text-xs font-semibold text-gray-500 text-center rounded-lg transition-all peer-checked:bg-white peer-checked:text-green-600 peer-checked:shadow-sm">过冷器</div>
+                                                </label>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- 过冷器模式参数 -->
+                                        <div id="eco-subcooler-settings-m5" class="hidden space-y-4">
+                                            <div>
+                                                <label class="block text-xs text-gray-500 mb-1 ml-1">补气过热度 (K)</label>
+                                                <input type="number" id="eco_superheat_m5_subcooler" value="5" step="0.1" min="0" max="50" class="glass-input block w-full rounded-xl py-2 px-3 text-gray-900 font-medium">
+                                                <p class="text-[10px] text-gray-400 mt-0.5 ml-1">补气在过冷器中的过热度</p>
+                                            </div>
+                                            <div>
+                                                <label class="block text-xs text-gray-500 mb-1 ml-1">过冷器接近度 (K)</label>
+                                                <input type="number" id="eco_dt_m5" value="5" step="0.1" min="0" max="20" class="glass-input block w-full rounded-xl py-2 px-3 text-gray-900 font-medium">
+                                                <p class="text-[10px] text-gray-400 mt-0.5 ml-1">主路出口温度与中间饱和温度的差值</p>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="text-[10px] text-gray-500 italic">
+                                            <p class="mb-1"><strong>闪蒸罐模式：</strong>从冷凝器出口液体等焓节流到中间压力，产生饱和蒸汽补气</p>
+                                            <p><strong>过冷器模式：</strong>主路液体过冷，补气路在过冷器中吸热变为过热蒸汽</p>
+                                        </div>
+                                    </div>
+                                    <div id="eco-placeholder-m5" class="text-xs text-gray-400 italic py-1 text-center">ECO 未启用</div>
                                 </div>
-                                <div>
-                                    <label class="block text-xs font-bold text-purple-600 mb-1 ml-1">设定排气温度 T2a (°C) - 高压级</label>
-                                    <input type="number" id="temp_discharge_actual_m5" value="80.5" step="any" class="glass-input block w-full rounded-xl py-2.5 px-3 text-gray-900 font-bold bg-purple-50/50 border-purple-100 focus:ring-purple-200">
+
+                                <!-- 缸头冷却 (Cylinder Head Cooling) -->
+                                <div class="glass-panel rounded-3xl p-6 relative overflow-hidden group">
+                                    <div class="flex items-center justify-between mb-5 z-10 relative">
+                                        <div class="flex items-center space-x-3">
+                                            <div class="w-8 h-8 rounded-xl bg-cyan-100 flex items-center justify-center text-cyan-600 shadow-sm">
+                                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                            </div>
+                                            <h3 class="text-base font-bold text-gray-900">缸头冷却 (Cylinder Head Cooling)</h3>
+                                        </div>
+                                        <label class="relative inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" id="cylinder_head_cooling_enabled_m5" class="sr-only peer" checked>
+                                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all after:shadow-sm peer-checked:bg-cyan-500 transition-colors duration-300 ease-ios"></div>
+                                        </label>
+                                    </div>
+
+                                    <div id="cylinder-head-cooling-settings-m5" class="hidden space-y-4 relative z-10 animate-fade-in">
+                                        <!-- 输入模式选择 -->
+                                        <div class="mb-3">
+                                            <label class="block text-xs text-gray-500 mb-2 ml-1">输入模式</label>
+                                            <div class="flex gap-2">
+                                                <label class="flex-1 cursor-pointer">
+                                                    <input type="radio" name="cylinder_head_input_mode_m5" value="water_temp" class="sr-only peer" checked>
+                                                    <div class="px-3 py-2 text-xs font-medium text-center rounded-lg border-2 border-gray-200 peer-checked:border-cyan-500 peer-checked:bg-cyan-50 peer-checked:text-cyan-700 transition-all">
+                                                        水温计算
+                                                    </div>
+                                                </label>
+                                                <label class="flex-1 cursor-pointer">
+                                                    <input type="radio" name="cylinder_head_input_mode_m5" value="direct_power" class="sr-only peer">
+                                                    <div class="px-3 py-2 text-xs font-medium text-center rounded-lg border-2 border-gray-200 peer-checked:border-cyan-500 peer-checked:bg-cyan-50 peer-checked:text-cyan-700 transition-all">
+                                                        直接输入
+                                                    </div>
+                                                </label>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- 水温计算模式 -->
+                                        <div id="cylinder-head-water-temp-mode-m5" class="space-y-4">
+                                            <div class="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label class="block text-xs text-gray-500 mb-1 ml-1">进水温度 (°C)</label>
+                                                    <input type="number" id="cylinder_head_water_inlet_temp_m5" value="30" step="0.1" min="10" max="80" class="glass-input block w-full rounded-lg py-1.5 px-2 text-xs text-gray-900 font-medium">
+                                                    <p class="text-[10px] text-gray-400 mt-0.5 ml-1">必须 > 蒸发温度 + 10K</p>
+                                                </div>
+                                                <div>
+                                                    <label class="block text-xs text-gray-500 mb-1 ml-1">出水温度 (°C)</label>
+                                                    <input type="number" id="cylinder_head_water_outlet_temp_m5" value="35" step="0.1" min="15" max="100" class="glass-input block w-full rounded-lg py-1.5 px-2 text-xs text-gray-900 font-medium">
+                                                    <p class="text-[10px] text-gray-400 mt-0.5 ml-1">必须 > 进水温度</p>
+                                                </div>
+                                            </div>
+                                            <div class="text-[10px] text-gray-600">换热量: <span id="cylinder_head_q_m5" class="font-bold text-cyan-700">--</span> kW</div>
+                                        </div>
+                                        
+                                        <!-- 直接输入模式 -->
+                                        <div id="cylinder-head-direct-power-mode-m5" class="hidden space-y-4">
+                                            <div>
+                                                <label class="block text-xs text-gray-500 mb-1 ml-1">缸头冷却负荷 (kW)</label>
+                                                <input type="number" id="cylinder_head_power_input_m5" value="0" step="0.1" min="0" max="1000" class="glass-input block w-full rounded-lg py-1.5 px-2 text-xs text-gray-900 font-medium">
+                                                <p class="text-[10px] text-gray-400 mt-0.5 ml-1">直接输入缸头冷却负荷，典型值约 4% 轴功率</p>
+                                            </div>
+                                            <div class="text-[10px] text-gray-600">输入负荷: <span id="cylinder_head_q_direct_m5" class="font-bold text-cyan-700">--</span> kW</div>
+                                        </div>
+                                    </div>
+                                    <div id="cylinder-head-cooling-placeholder-m5" class="text-xs text-gray-400 italic py-1 text-center">缸头冷却未启用</div>
                                 </div>
                             </div>
                         </div>
