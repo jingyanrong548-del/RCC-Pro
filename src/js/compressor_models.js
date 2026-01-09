@@ -704,6 +704,32 @@ export const COMPRESSOR_MODELS = {
                 debug_reference: 'At 970 rpm, 8K displacement should be 172 m³/h (sample data)'
             }
         ],
+        'K Series (Two Stage Open Type)': [
+            {
+                model: '62K',
+                displacement: 129,  // 低压级排量 @970rpm（样本值）
+                disp_lp: 129,  // 低压级排量 (m³/h) @970rpm
+                disp_hp: 42.9,  // 高压级排量 (m³/h) @970rpm
+                vi_ratio: 129 / 42.9,  // 容积比 (Vi,L / Vi,H) ≈ 3.01
+                referenceRpm: 970,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 129,  // 参考转速下的低压级排量（样本值）
+                swept_volume_max_m3h: 199.48,  // 最大转速1500rpm下的低压级扫气量（用于计算）
+                cylinders_lp: 6,  // 低压级气缸数
+                cylinders_hp: 2,  // 高压级气缸数
+                cylinders: 8,  // 总气缸数（6+2）
+                bore_mm: 85,  // 缸径（样本数据）
+                stroke_mm: 65,  // 行程（样本数据）
+                max_rpm: 1500,
+                rpm_range: [800, 1500],  // 样本标注：800-1500 rpm
+                clearance_factor: 0.04,  // 小型压缩机典型值
+                refrigerants: ['R717', 'R404A', 'R507A'],  // 样本数据：氨 / HFCs (R404A, R507A)
+                capacity_control: [100, 66, 33],  // 容量控制：100/66/33（样本数据）
+                drive_method: 'Direct drive/V-belt',  // 驱动方式（样本数据）
+                // 样本数据：62K @970rpm = 低段 129 m³/h, 高段 42.9 m³/h，缸径85mm，行程65mm
+                // 样本说明：双级往复式压缩机，适用于小规模深冷应用，大修间隔是K型单级机的两倍
+                debug_reference: 'At 970 rpm, 62K: LP=129 m³/h, HP=42.9 m³/h (sample data from MYCOM K-SERIES brochure)'
+            }
+        ],
         'L Series (Ammonia Exclusive Design)': [
             {
                 model: '4L',
@@ -961,6 +987,13 @@ export const DISCHARGE_TEMP_LIMITS = {
         warning: 140,  // °C - 标准氨制冷/热泵工况警告温度
         trip: 150      // °C - 标准氨制冷/热泵工况跳闸温度
     },
+    // MYCOM K Series (Two Stage Open Type) - 双级开放式系列（小型）
+    // 根据MYCOM技术资料，K系列双级压缩机为小型双级压缩机，适用于小规模深冷应用
+    // 设计压力与标准氨系列类似，用于标准制冷/热泵应用
+    'K Series (Two Stage Open Type)': {
+        warning: 140,  // °C - 标准氨制冷/热泵工况警告温度
+        trip: 150      // °C - 标准氨制冷/热泵工况跳闸温度
+    },
     // MYCOM L Series (Ammonia Exclusive Design) - 氨专用设计系列
     // 根据MYCOM技术资料，L系列专为氨制冷剂设计，支持1000-1800rpm
     // 设计压力与标准氨系列类似，用于标准氨制冷应用
@@ -1045,14 +1078,21 @@ export function getFilteredBrands(mode) {
  * @returns {string[]} 过滤后的系列名称数组
  */
 export function getFilteredSeriesByBrand(mode, brand, level = null) {
-    // Mode 5 (单机双级): MYCOM 品牌返回 WBHE、M II 和 WA 双级系列，GEA Grasso 品牌返回所有系列
+    // Mode 5 (单机双级): MYCOM 品牌返回 WBHE、M II、WA 和 K 双级系列，GEA Grasso 品牌返回所有系列
     if (mode === 'm5') {
         if (brand === 'MYCOM') {
-            return ['WBHE Series (Two Stage Open Type)', 'M II Series (Two Stage Open Type)', 'WA Series (Two Stage Open Type)'];
+            return ['WBHE Series (Two Stage Open Type)', 'M II Series (Two Stage Open Type)', 'WA Series (Two Stage Open Type)', 'K Series (Two Stage Open Type)'];
         } else if (brand === 'GEA Grasso') {
             // GEA Grasso 品牌的所有系列都可用
             return getSeriesByBrand(brand);
         }
+    }
+    
+    // Mode 7 (单级模式): 排除所有双级系列，只返回单级系列
+    if (mode === 'm7') {
+        const allSeries = getSeriesByBrand(brand);
+        // 排除所有包含 "Two Stage" 的系列
+        return allSeries.filter(series => !series.includes('Two Stage'));
     }
     
     // 其他模式: 返回所有系列

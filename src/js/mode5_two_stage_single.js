@@ -1652,6 +1652,24 @@ function calculateMode5() {
                 flow: result.m_dot_total.toFixed(4)
             });
 
+            // 点 3'：SLHX 后（如果有 SLHX）
+            if (result.isSlhxEnabled) {
+                let T_3p_K;
+                try {
+                    T_3p_K = CP_INSTANCE.PropsSI('T', 'H', result.h_liq_out, 'P', result.Pc_Pa, fluid);
+                } catch (e) {
+                    T_3p_K = result.T3_K;
+                }
+                statePoints.push({
+                    name: "3'",
+                    desc: 'Cond Out (SLHX)',
+                    temp: (T_3p_K - 273.15).toFixed(1),
+                    press: (result.Pc_Pa / 1e5).toFixed(2),
+                    enth: (result.h_liq_out / 1000).toFixed(1),
+                    flow: result.m_dot_total.toFixed(4)
+                });
+            }
+
             // ECO 相关状态点（如果有 ECO）
             if (result.isEcoEnabled) {
                 let T_5_K, T_7_K;
@@ -1764,6 +1782,8 @@ function calculateMode5() {
             
             const pt2 = point('2', result.h2, result.Pc_Pa, 'top');
             const pt3 = point('3', result.h3, result.Pc_Pa, 'top');
+            // 3' 点：冷凝器出口通过回热器过冷后的位置（如果有 SLHX）
+            const pt3_p = result.isSlhxEnabled ? point("3'", result.h_liq_out, result.Pc_Pa, 'top') : null;
             const pt4 = point('4', result.h4, result.Pe_Pa, 'bottom');
 
             // 5' 始终位于节流前的高压侧（冷凝压力 Pc），与模式一/四保持一致
@@ -1812,13 +1832,18 @@ function calculateMode5() {
             
             mainPoints.push(pt2, pt3);
             
-            // 从点3到点4的路径（主循环的一部分）
+            // 如果有 SLHX，显示 3 → 3' 的过程（回热器过冷）
+            if (result.isSlhxEnabled && pt3_p) {
+                mainPoints.push(pt3_p);
+            }
+            
+            // 从点3（或3'）到点4的路径（主循环的一部分）
             // 注意：3 点左边不应该有线，3 点直接节流到中间压力
             if (result.isEcoEnabled && result.m_dot_inj > 0) {
-                // 有中间冷却器ECO：主循环包含从点3到点4的完整路径
+                // 有中间冷却器ECO：主循环包含从点3（或3'）到点4的完整路径
                 if (result.ecoType === 'flash_tank') {
                     // 闪蒸罐模式：
-                    // 3 → a（等焓节流到中间压力，进入闪蒸罐）
+                    // 3（或3'） → a（等焓节流到中间压力，进入闪蒸罐）
                     // a → 5（闪蒸后的饱和液体，在中间压力下）
                     // 5 → 4（等焓节流到蒸发压力）
                     // 注意：a 点向右的路径（a → 6 → mix）在 ECO 路径中显示
@@ -1830,7 +1855,7 @@ function calculateMode5() {
                     }
                 } else {
                     // 过冷器模式（一级节流中间完全冷却形式）：
-                    // 3 → 7（等焓节流到中间压力，竖直线）→ 5（在中间压力下完全冷却到饱和，等压过程）→ 4（等焓节流到蒸发压力，竖直线）
+                    // 3（或3'） → 7（等焓节流到中间压力，竖直线）→ 5（在中间压力下完全冷却到饱和，等压过程）→ 4（等焓节流到蒸发压力，竖直线）
                     // 点7和点5都在中间压力下
                     if (pt7) {
                         mainPoints.push(pt7); // 点7：节流到中间压力
@@ -1840,9 +1865,11 @@ function calculateMode5() {
                     }
                 }
             } else if (result.isSlhxEnabled) {
-                // 无ECO但有SLHX：3 → 5' → 4
-                const pt5_p_subcooler = point("5'", result.h4, result.Pc_Pa, 'top');
-                mainPoints.push(pt5_p_subcooler);
+                // 无ECO但有SLHX：3' → 5' → 4
+                // 注意：pt5_p 已经在上面定义了，这里不需要重新定义
+                if (pt5_p) {
+                    mainPoints.push(pt5_p);
+                }
             } else {
                 // 无ECO：3 → 4（等焓节流）
             }
@@ -1850,14 +1877,17 @@ function calculateMode5() {
             mainPoints.push(pt4);
 
             // ECO 补气路径
-            // 注意：主循环已经包含了从点3到点4的路径，ECO路径只显示辅助循环
+            // 注意：主循环已经包含了从点3（或3'）到点4的路径，ECO路径只显示辅助循环
+            // 如果有 SLHX，ECO 路径应该从 3'（h_liq_out）开始，否则从 3（h3）开始
             if (result.isEcoEnabled && result.m_dot_inj > 0) {
+                // 确定 ECO 路径的起点：如果有 SLHX，使用 h_liq_out（3'点），否则使用 h3（3点）
+                const h_eco_start = result.isSlhxEnabled ? result.h_liq_out : result.h3;
                 if (result.ecoType === 'flash_tank') {
                     // 闪蒸罐模式：
-                    // ECO液路：3 -> a（等焓节流到中间压力，进入闪蒸罐）-> 5（闪蒸后的饱和液体）
+                    // ECO液路：3（或3'） -> a（等焓节流到中间压力，进入闪蒸罐）-> 5（闪蒸后的饱和液体）
                     // 注意：5 -> 4 的节流在主循环中显示，这里只显示到点5
                     ecoLiquidPoints = [
-                        [result.h3 / 1000, result.Pc_Pa / 1e5],
+                        [h_eco_start / 1000, result.Pc_Pa / 1e5],
                         [result.h_7_eco / 1000, result.P_intermediate_Pa / 1e5], // a点
                         [result.h_5_eco / 1000, result.P_intermediate_Pa / 1e5]  // 5点
                     ];
@@ -1869,10 +1899,10 @@ function calculateMode5() {
                     ];
                 } else {
                     // 过冷器模式（一级节流中间完全冷却形式）：
-                    // ECO液路：3 -> 7（等焓节流到中间压力）-> 5（在中间压力下完全冷却到饱和）
+                    // ECO液路：3（或3'） -> 7（等焓节流到中间压力）-> 5（在中间压力下完全冷却到饱和）
                     // 注意：5 -> 4 的节流在主循环中显示，这里只显示到点5
                     ecoLiquidPoints = [
-                        [result.h3 / 1000, result.Pc_Pa / 1e5],
+                        [h_eco_start / 1000, result.Pc_Pa / 1e5],
                         [result.h_7_eco / 1000, result.P_intermediate_Pa / 1e5], // 点7：节流到中间压力
                         [result.h_5_eco / 1000, result.P_intermediate_Pa / 1e5]  // 点5：在中间压力下饱和液体
                     ];
@@ -2049,7 +2079,27 @@ function calculateMode5() {
             });
             mainPointsTS.push(pt3_TS);
             
-            // 节流过程 3 -> 4（主循环的一部分）
+            // 点 3'：SLHX 后（如果有 SLHX，显示 3->3' 的等压过冷过程）
+            if (result.isSlhxEnabled) {
+                const pt3p_TS = {
+                    name: "3'",
+                    value: [
+                        CP_INSTANCE.PropsSI('S', 'H', result.h_liq_out, 'P', result.Pc_Pa, fluid) / 1000,
+                        CP_INSTANCE.PropsSI('T', 'H', result.h_liq_out, 'P', result.Pc_Pa, fluid) - 273.15
+                    ],
+                    label: { show: true }
+                };
+                // 添加等压过程中间点（3->3' SLHX 过冷过程）
+                const slhxCoolingPath = generateIsobaricPathTS(fluid, result.Pc_Pa, result.h3, result.h_liq_out, 5);
+                slhxCoolingPath.forEach((pt, idx) => {
+                    if (idx > 0 && idx < slhxCoolingPath.length - 1) {
+                        mainPointsTS.push({ name: '', value: pt, label: { show: false } });
+                    }
+                });
+                mainPointsTS.push(pt3p_TS);
+            }
+            
+            // 节流过程 3（或3'） -> 4（主循环的一部分）
             // 确定节流起点的焓值（与P-h图和状态点表保持一致）
             let h4_for_TS;
             if (result.isEcoEnabled) {
