@@ -305,6 +305,97 @@ export function calculateMycomEfficiencies(ratio, k_value, T_cond_celsius, clear
 }
 
 /**
+ * 计算 MYCOM 单机双级压缩机效率（基于 MYCOM 单机双级压缩机技术水平）
+ * MYCOM 单机双级压缩机特点（WBHE 和 M II 系列）：
+ * - 容积效率：接近 GEA 水平，专门设计的高效双级压缩机
+ * - 等熵效率：在标准工况下表现优秀，高压力比时仍能保持较高效率
+ * - 设计特点：超过15,000台使用记录（WBHE），新一代节能压缩机（M II）
+ * 
+ * @param {number} ratio - 压力比 (P_dis / P_suc)
+ * @param {number} k_value - 等熵指数 k (绝热指数)
+ * @param {number} T_cond_celsius - 冷凝温度 (°C)
+ * @param {number} clearance_factor_input - 相对余隙容积（可选，默认0.035-0.04）
+ * @returns {Object} { eta_v: 容积效率, eta_is: 等熵效率 }
+ */
+export function calculateMycomTwoStageEfficiencies(ratio, k_value, T_cond_celsius, clearance_factor_input) {
+    // ==========================================
+    // 1. MYCOM 单机双级专用常数（基于高效双级压缩机设计，优化后）
+    // ==========================================
+    // Volumetric Efficiency: MYCOM 单机双级压缩机设计更高效，接近或超过 GEA 水平
+    const CLEARANCE_C = clearance_factor_input || 0.035;  // MYCOM 单机双级典型余隙容积（与 GEA 接近）
+    const FLOW_RESISTANCE_FACTOR = 0.97;                  // MYCOM 单机双级流动阻力因子（提升至0.97，高于GEA的0.96）
+    const LEAKAGE_COEFFICIENT = 0.008;                    // MYCOM 单机双级泄漏系数（降低至0.8%损失/压力比，优于GEA的1.2%）
+    
+    // Isentropic Efficiency: MYCOM 单机双级机械效率接近 GEA 水平
+    const MECHANICAL_EFF_BASE = 0.94;                     // MYCOM 单机双级机械效率（接近 GEA 的 0.95）
+
+    // 参数验证
+    if (isNaN(ratio) || ratio < 1) {
+        console.warn('[MYCOM Two-Stage Efficiency] Invalid pressure ratio');
+        return { eta_v: 0.75, eta_is: 0.70 };
+    }
+    if (isNaN(k_value) || k_value < 1.0 || k_value > 2.0) {
+        console.warn('[MYCOM Two-Stage Efficiency] Invalid k value, using default 1.3');
+        k_value = 1.3;
+    }
+
+    // ==========================================
+    // 2. Volumetric Efficiency (λ) Calculation
+    // ==========================================
+    // Step 1: Theoretical Lambda (Clearance only)
+    const expansion_term = Math.pow(ratio, 1.0 / k_value) - 1.0;
+    const lambda_theo = 1.0 - CLEARANCE_C * expansion_term;
+
+    // Step 2: Real Lambda (Apply Leakage & Resistance)
+    // MYCOM 单机双级泄漏损失更低（优化的泄漏系数）
+    // 使用更温和的泄漏损失计算，对低压力比更友好
+    let leakage_loss;
+    if (ratio < 3.0) {
+        // 低压力比时，泄漏损失更小
+        leakage_loss = LEAKAGE_COEFFICIENT * ratio * 0.8;
+    } else if (ratio < 6.0) {
+        // 中等压力比时，标准泄漏损失
+        leakage_loss = LEAKAGE_COEFFICIENT * ratio;
+    } else {
+        // 高压力比时，泄漏损失略有增加但保持较低
+        leakage_loss = LEAKAGE_COEFFICIENT * ratio * 1.1;
+    }
+    
+    // Real Lambda Formula: 使用更高的流动阻力因子和更低的泄漏损失
+    let lambda_real = (lambda_theo * FLOW_RESISTANCE_FACTOR) - leakage_loss;
+
+    // Clamp: MYCOM 单机双级容积效率上限提升至0.94（高于GEA的0.92）
+    lambda_real = Math.max(0.2, Math.min(0.94, lambda_real));
+
+    // ==========================================
+    // 3. Isentropic Efficiency (η_is) Calculation
+    // ==========================================
+    // Step 1: Base Isentropic
+    // MYCOM 单机双级机械效率接近 GEA 水平
+    let eta_is_base = lambda_real * MECHANICAL_EFF_BASE;
+
+    // Step 2: Heat Pump (High Temp) Correction
+    // MYCOM 单机双级在高冷凝温度时的修正与 GEA 相同（更温和）
+    let correction_factor = 1.0;
+    if (!isNaN(T_cond_celsius) && T_cond_celsius > 55) {
+        // MYCOM 单机双级修正系数：0.002/度（与 GEA 相同，更温和）
+        correction_factor = 1.0 - ((T_cond_celsius - 55) * 0.002);
+        correction_factor = Math.max(0.70, Math.min(1.0, correction_factor));
+    }
+
+    // Step 3: Final η_is
+    let eta_is = eta_is_base * correction_factor;
+
+    // 边界保护：MYCOM 单机双级等熵效率上限接近 GEA 水平
+    eta_is = Math.max(0.50, Math.min(0.85, eta_is));
+
+    return {
+        eta_v: parseFloat(lambda_real.toFixed(4)),
+        eta_is: parseFloat(eta_is.toFixed(4))
+    };
+}
+
+/**
  * 计算活塞压缩机效率（半经验工程公式 - 混合方案）
  * 混合策略：保守的容积效率 + 高端的等熵效率
  * 针对 GEA Grasso 氨热泵应用（高压力比、高排气温度）进行优化

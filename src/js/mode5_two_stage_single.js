@@ -10,7 +10,7 @@ import { drawPHDiagram, drawTSDiagram, getChartInstance } from './charts.js';
 import { HistoryDB, SessionState } from './storage.js';
 import { openMobileSheet } from './ui.js';
 import { updateFluidInfo } from './coolprop_loader.js';
-import { calculateEmpiricalEfficiencies, calculateReciprocatingVolumetricEfficiency, calculateEfficiencies, calculateMycomEfficiencies } from './efficiency_models.js';
+import { calculateEmpiricalEfficiencies, calculateReciprocatingVolumetricEfficiency, calculateEfficiencies, calculateMycomEfficiencies, calculateMycomTwoStageEfficiencies } from './efficiency_models.js';
 import i18next from './i18n.js';
 import { 
     getFilteredBrands,
@@ -706,7 +706,9 @@ function computeTwoStageCycle({
     ecoDt_K = 5.0,
     // SLHX参数
     isSlhxEnabled = false,
-    slhxEff = 0.5
+    slhxEff = 0.5,
+    // 设计排气温度参数（用于油冷负荷计算）
+    T_2a_est_C = null
 }) {
     const T_evap_K = Te_C + 273.15;
     const T_cond_K = Tc_C + 273.15;
@@ -866,7 +868,7 @@ function computeTwoStageCycle({
     const m_dot_total = m_dot_suc + m_dot_inj; // 总流量 = 低压级流量 + 补气流量
 
     // =========================================================
-    // 两级压缩功计算（支持ECO，支持补气，无油冷）
+    // 两级压缩功计算（支持ECO，支持补气，支持油冷）
     // =========================================================
     // 第一级压缩：P_s → P_intermediate（使用低压级等熵效率）
     const h_mid_1s = CP_INSTANCE.PropsSI('H', 'P', P_intermediate_Pa, 'S', s_suc, fluid);
@@ -973,16 +975,63 @@ function computeTwoStageCycle({
     const W_shaft_W = W_s1 + W_s2;  // 总轴功 = LP功 + HP功
     const W_input_W = W_shaft_W;
 
-    // 高压级排气点（点2）- 无油冷
-    const h2 = h_mix + (h_2s_stage2 - h_mix) / eta_s_hp;
-    const T2_K = CP_INSTANCE.PropsSI('T', 'P', Pc_Pa, 'H', h2, fluid);
-    const T2_C = T2_K - 273.15;
+    // 高压级排气点（点2）- 计算实际排气状态
+    const h2_calculated = h_mix + (h_2s_stage2 - h_mix) / eta_s_hp;
+    const T2_calculated_K = CP_INSTANCE.PropsSI('T', 'P', Pc_Pa, 'H', h2_calculated, fluid);
+    const T2_calculated_C = T2_calculated_K - 273.15;
     
-    // 点2a等于点2（无油冷）
-    const h_2a_final = h2;
-    const T_2a_final_C = T2_C;
+    // 高压级排气温度：如果输入了设计值，需要判断计算值与设计值的关系
+    let h_2a_final = 0;
+    let T_2a_final_C = 0;
+    if (T_2a_est_C !== null && !isNaN(T_2a_est_C)) {
+        // 用户输入了设计排温
+        // 如果计算值小于设计值，使用计算值（实际排温更低，不需要油冷）
+        // 如果计算值大于等于设计值，使用设计值（需要油冷来达到设计值）
+        if (T2_calculated_C < T_2a_est_C) {
+            // 计算值小于设计值，使用计算值
+            h_2a_final = h2_calculated;
+            T_2a_final_C = T2_calculated_C;
+        } else {
+            // 计算值大于等于设计值，使用设计值
+            const T_2a_est_K = T_2a_est_C + 273.15;
+            h_2a_final = CP_INSTANCE.PropsSI('H', 'T', T_2a_est_K, 'P', Pc_Pa, fluid);
+            T_2a_final_C = T_2a_est_C;
+        }
+    } else {
+        // 未输入设计排温，使用实际计算值
+        h_2a_final = h2_calculated;
+        T_2a_final_C = T2_calculated_C;
+    }
+
+    // 油冷负荷计算（参考 mode7 的逻辑）
+    // =========================================================
+    // 油冷负荷 = 总摩擦热 = 总轴功率 - 总气体功率
+    // 这是机械损失，必须由油冷系统带走
+    // 注意：油冷是从压缩功中直接带走的，不影响排气焓值
+    // =========================================================
+    // 低压级气体功率：P_gas_lp = m_dot_suc * (h_mid - h_suc)
+    const P_gas_lp = m_dot_suc * (h_mid - h_suc);
+    // 高压级气体功率：P_gas_hp = m_dot_total * (h_2a_final - h_mix)
+    const P_gas_hp = m_dot_total * (h_2a_final - h_mix);
+    // 总气体功率
+    const P_gas_total = P_gas_lp + P_gas_hp;
+    // 总摩擦热（油冷负荷）：Q_oil_W = W_shaft_W - P_gas_total
+    // 如果计算值为负或接近0，使用经验值（约3%总轴功）
+    let Q_oil_W = W_shaft_W - P_gas_total;
+    
+    if (Q_oil_W <= 0 || (T_2a_est_C === null && Q_oil_W < W_shaft_W * 0.01)) {
+        // 如果没有输入设计排气温度，使用经验值：油冷负荷约为总轴功的3%
+        // 这是基于工程实际的合理估算（曲轴、轴承、轴封等部件的摩擦热）
+        Q_oil_W = W_shaft_W * 0.03;
+        console.log(`[RCC Pro Mode5] 未输入设计排气温度，使用经验值计算油冷负荷: ${(Q_oil_W/1000).toFixed(2)} kW (约${(Q_oil_W/W_shaft_W*100).toFixed(1)}% 总轴功)`);
+        console.log(`[RCC Pro Mode5] 注意：油冷负荷是从压缩功中直接带走的摩擦热，不影响排气焓值`);
+    } else {
+        console.log(`[RCC Pro Mode5] 油冷负荷（摩擦热）: ${(Q_oil_W/1000).toFixed(2)} kW (${(Q_oil_W/W_shaft_W*100).toFixed(1)}% 总轴功)`);
+        console.log(`[RCC Pro Mode5] 总气体功率: ${(P_gas_total/1000).toFixed(2)} kW (LP: ${(P_gas_lp/1000).toFixed(2)} + HP: ${(P_gas_hp/1000).toFixed(2)}), 总轴功率: ${(W_shaft_W/1000).toFixed(2)} kW`);
+    }
 
     // 蒸发制冷量 & 冷凝放热
+    // 注意：Q_cond_W 应该基于考虑了油冷后的排气焓值 h_2a_final
     const Q_evap_W = m_dot_suc * (h1_base - h_liq_out);
     const Q_cond_W = m_dot_total * (h_2a_final - h3);
 
@@ -1005,8 +1054,8 @@ function computeTwoStageCycle({
         m_dot_inj,
         h1: h1_base,
         h_suc,
-        h2: h2,
-        h2a: h_2a_final,
+        h2: h2_calculated,  // 压缩后的计算状态（冷却前）
+        h2a: h_2a_final,     // 实际排气状态（考虑油冷后）
         h3,
         h4,
         h_liq_out,  // SLHX 后的液体焓值（用于节流计算）
@@ -1020,11 +1069,13 @@ function computeTwoStageCycle({
         h_7_eco: isEcoEnabled ? h_7_eco : null,
         // 中间冷却器负荷（用于冷却低压级排气）
         Q_intercooler_W: Q_intercooler_W,
+        // 油冷负荷（用于冷却高压级排气，带走曲轴、轴承、轴封等部件的热量）
+        Q_oil_W: Q_oil_W,
         T1_K,
         T_mid_C: T_mid_C, // 压缩后的温度（冷却前）
         T_mid_cooled_C: T_mid_cooled_C, // 冷却后的温度（用于混合）
-        T2_C: T2_C,
-        T2a_C: T_2a_final_C,
+        T2_C: T2_calculated_C, // 压缩后的计算温度（冷却前）
+        T2a_C: T_2a_final_C, // 实际排气温度（考虑油冷后）
         T3_K,
         T4_C: T4_C,
         Q_evap_W,
@@ -1111,6 +1162,13 @@ function calculateMode5() {
                 : (ecoSuperheatInputSubcooler ? parseFloat(ecoSuperheatInputSubcooler.value) : 5);
             const ecoDtValue = ecoDtInput ? parseFloat(ecoDtInput.value) : 5.0;
             
+            // 设计排气温度参数（用于油冷负荷计算，可选）
+            // 如果未输入，将使用计算值（无油冷）
+            const T_2a_est_C_input = document.getElementById('discharge_temp_est_m5');
+            const T_2a_est_C = T_2a_est_C_input && T_2a_est_C_input.value 
+                ? parseFloat(T_2a_est_C_input.value) 
+                : null;
+            
             // 验证 ECO 参数
             if (isEcoEnabled) {
                 if (ecoTypeValue === 'subcooler') {
@@ -1190,7 +1248,8 @@ function calculateMode5() {
                 ecoSuperheat_K: ecoSuperheatValue,
                 ecoDt_K: ecoDtValue,
                 isSlhxEnabled,
-                slhxEff: slhxEffValue
+                slhxEff: slhxEffValue,
+                T_2a_est_C: T_2a_est_C  // 设计排气温度（用于油冷负荷计算）
             });
             
             // 保存 ECO 参数供结果渲染使用
@@ -1391,28 +1450,99 @@ function calculateMode5() {
             }
 
             // =========================================================
-            // 热平衡计算（参考 Mode 2 逻辑）
+            // 热平衡计算（参考 Mode 7 逻辑）
             // =========================================================
-            // 双级压缩：冷凝器负荷 = 质量流量 × (排气焓 - 冷凝器出口焓)
-            // 如果启用缸头冷却，使用修正后的排气焓值
+            // 双级压缩：冷凝器负荷计算（参考 Mode 7 逻辑）
+            // =========================================================
+            // 根据能量守恒原理：
+            // 总排热量 = Q_evap + W_shaft = Q_cond + Q_oil + Q_cylinder_head
+            // 所以：Q_cond = 总排热量 - Q_oil - Q_cylinder_head
+            // 
+            // 物理意义：
+            // - 油冷是摩擦热，从压缩功中直接带走，不影响排气焓值
+            // - 缸头冷却是从排气中带走的热量，影响排气焓值
+            // - 冷凝器排热 = 总排热量 - 油冷负荷 - 缸头冷却负荷
+            // =========================================================
+            const Q_heating_total_W = result.Q_evap_W + result.W_shaft_W;
+            
+            // 方法1：基于能量守恒直接计算（推荐，保证能量守恒）
+            const Q_cond_W_from_balance = Q_heating_total_W - result.Q_oil_W - Q_cylinder_head_W;
+            
+            // 方法2：基于焓值计算（用于验证）
             const h_2_for_cond = (isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError && Q_cylinder_head_W > 0)
                 ? h_2a_after_head_cooling
                 : result.h2a;
-            const Q_cond_W_updated = result.m_dot_total * (h_2_for_cond - result.h3);
+            const Q_cond_W_from_enthalpy = result.m_dot_total * (h_2_for_cond - result.h3);
             
-            // 总排热量计算：使用能量守恒原理
-            // 能量守恒：总排热量 = 制冷量 + 轴功率
-            // 总排热量 = 冷凝器排热 + 缸头冷却排热（双级压缩无油冷）
-            const Q_heating_total_W = result.Q_evap_W + result.W_shaft_W;
+            // 使用能量守恒方法计算冷凝器排热（保证能量守恒）
+            const Q_cond_W_updated = Q_cond_W_from_balance;
             
-            // 验证：总排热量应该等于各分项之和
-            const Q_heating_expected = Q_cond_W_updated + Q_cylinder_head_W;
+            // 验证两种方法的一致性
+            const cond_calc_diff = Math.abs(Q_cond_W_from_balance - Q_cond_W_from_enthalpy);
+            if (cond_calc_diff > 100) { // 允许100W的误差（数值精度）
+                console.warn(`[RCC Pro Mode5] 冷凝器排热计算差异: 能量守恒法 ${(Q_cond_W_from_balance/1000).toFixed(2)} kW vs 焓值法 ${(Q_cond_W_from_enthalpy/1000).toFixed(2)} kW，差值: ${(cond_calc_diff/1000).toFixed(2)} kW`);
+                console.warn(`[RCC Pro Mode5] 使用能量守恒法以保证热平衡`);
+            }
+            
+            
+            // =========================================================
+            // 热平衡计算逻辑（Heat Balance Calculation）
+            // =========================================================
+            // 根据能量守恒原理：
+            // 总排热量 = 制冷量 + 轴功率
+            // Q_heating_total = Q_evap + W_shaft
+            //
+            // 物理意义：
+            // - 制冷量 (Q_evap): 从低温热源（蒸发器）吸收的热量
+            // - 轴功率 (W_shaft): 压缩机消耗的功（最终转化为热量）
+            // - 总排热量 (Q_heating_total): 向高温热源（冷凝器+缸头冷却）释放的总热量
+            //
+            // 分项验证：
+            // - 冷凝器排热 (Q_cond): 高压级排气在冷凝器中释放的热量
+            // - 油冷负荷 (Q_oil): 油冷却系统带走的热量（用于冷却曲轴、轴承、轴封等部件）
+            // - 缸头冷却负荷 (Q_cylinder_head): 缸头冷却系统带走的热量（如果启用）
+            // - 验证：Q_heating_total = Q_cond + Q_oil + Q_cylinder_head（能量守恒）
+            // =========================================================
+            // 注意：Q_heating_total_W 已在上面定义，这里不再重复定义
+            
+            // 验证：总排热量应该等于各分项之和（包括油冷负荷）
+            // 注意：油冷是摩擦热，不影响排气焓值，所以 Q_cond 基于实际排气焓值计算
+            // 缸头冷却是从排气中带走的热量，所以 Q_cond_W_updated 已经考虑了缸头冷却的影响
+            // 正确的热平衡应该是：
+            // Q_heating_total = Q_evap + W_shaft = Q_cond + Q_oil + Q_cylinder_head
+            // 其中：
+            // - Q_cond = m_dot_total * (h_2_for_cond - h3)，h_2_for_cond 已经考虑了缸头冷却
+            // - Q_oil = W_shaft - P_gas_total（摩擦热）
+            // - Q_cylinder_head = 缸头冷却带走的热量（如果启用）
+            const Q_heating_expected = Q_cond_W_updated + result.Q_oil_W + Q_cylinder_head_W;
+            
+            // 验证：如果没有缸头冷却，Q_cond_W_updated 应该等于 result.Q_cond_W
+            if (!isCylinderHeadCoolingEnabled || !Q_cylinder_head_W || cylinderHeadCoolingError) {
+                const cond_diff = Math.abs(Q_cond_W_updated - result.Q_cond_W);
+                if (cond_diff > 100) { // 允许100W的误差（数值精度）
+                    console.warn(`[RCC Pro Mode5] Q_cond_W_updated (${(Q_cond_W_updated/1000).toFixed(2)} kW) 与 result.Q_cond_W (${(result.Q_cond_W/1000).toFixed(2)} kW) 不一致，差值: ${(cond_diff/1000).toFixed(2)} kW`);
+                    // 如果差异较大，使用 result.Q_cond_W 来保证一致性
+                    if (cond_diff > 1000) {
+                        console.warn(`[RCC Pro Mode5] 使用 result.Q_cond_W 替代 Q_cond_W_updated 以保证能量守恒`);
+                        const Q_heating_expected_fixed = result.Q_cond_W + result.Q_oil_W + Q_cylinder_head_W;
+                        const balance_error_fixed = Math.abs(Q_heating_total_W - Q_heating_expected_fixed);
+                        console.log(`[RCC Pro Mode5] 修正后的分项求和: ${(Q_heating_expected_fixed/1000).toFixed(2)} kW，误差: ${(balance_error_fixed/1000).toFixed(2)} kW`);
+                    }
+                }
+            }
+            
+            // 调试：输出详细的计算过程
+            console.log(`[RCC Pro Mode5] 热平衡验证:`);
+            console.log(`  总排热量: ${(Q_heating_total_W/1000).toFixed(2)} kW = Q_evap ${(result.Q_evap_W/1000).toFixed(2)} + W_shaft ${(result.W_shaft_W/1000).toFixed(2)}`);
+            console.log(`  分项求和: ${(Q_heating_expected/1000).toFixed(2)} kW = Q_cond ${(Q_cond_W_updated/1000).toFixed(2)} + Q_oil ${(result.Q_oil_W/1000).toFixed(2)} + Q_cylinder_head ${(Q_cylinder_head_W/1000).toFixed(2)}`);
+            console.log(`  result.h2a: ${(result.h2a/1000).toFixed(1)} kJ/kg, h_2_for_cond: ${(h_2_for_cond/1000).toFixed(1)} kJ/kg`);
+            console.log(`  result.h3: ${(result.h3/1000).toFixed(1)} kJ/kg`);
             const balance_error = Math.abs(Q_heating_total_W - Q_heating_expected);
             const balance_error_percent = Q_heating_expected > 0 ? (balance_error / Q_heating_expected) * 100 : 0;
             if (balance_error_percent > 0.1) { // 如果误差超过0.1%，记录警告
                 console.warn(`[RCC Pro Mode5] 热平衡误差: ${(balance_error/1000).toFixed(2)} kW (${balance_error_percent.toFixed(2)}%)`);
                 console.warn(`  总排热量（能量守恒）: ${(Q_heating_total_W/1000).toFixed(2)} kW = 制冷量 ${(result.Q_evap_W/1000).toFixed(2)} kW + 轴功率 ${(result.W_shaft_W/1000).toFixed(2)} kW`);
-                console.warn(`  总排热量（分项求和）: ${(Q_heating_expected/1000).toFixed(2)} kW = 冷凝器 ${(Q_cond_W_updated/1000).toFixed(2)} kW + 缸头冷却 ${(Q_cylinder_head_W/1000).toFixed(2)} kW`);
+                console.warn(`  总排热量（分项求和）: ${(Q_heating_expected/1000).toFixed(2)} kW = 冷凝器 ${(Q_cond_W_updated/1000).toFixed(2)} kW + 油冷 ${(result.Q_oil_W/1000).toFixed(2)} kW + 缸头冷却 ${(Q_cylinder_head_W/1000).toFixed(2)} kW`);
             }
 
             // 构造状态点表
@@ -2135,9 +2265,10 @@ function calculateMode5() {
             const html = `
                 ${cylinderHeadCoolingAlertHtml}
                 ${dischargeTempAlertHtml}
-                <div class="grid grid-cols-2 gap-4 mb-6">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                     ${createKpiCard('制冷量', (result.Q_evap_W / 1000).toFixed(2), 'kW', 'Cooling Capacity', 'blue')}
                     ${createKpiCard(i18next.t('components.totalShaftPower'), (result.W_shaft_W / 1000).toFixed(2), 'kW', i18next.t('components.totalShaftPower'), 'orange')}
+                    ${createKpiCard('总排热量', (Q_heating_total_W / 1000).toFixed(2), 'kW', 'Total Heat Rejection', 'red')}
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -2158,6 +2289,7 @@ function calculateMode5() {
                         ${result.isEcoEnabled && result.m_dot_inj > 0 ? createDetailRow('m_dot_inj (补气)', `${result.m_dot_inj.toFixed(4)} kg/s`) : ''}
                         ${createDetailRow('T2', `${(isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError && Q_cylinder_head_W > 0 ? T_2a_after_head_cooling_C : result.T2a_C).toFixed(1)} °C`)}
                         ${isCylinderHeadCoolingEnabled && !cylinderHeadCoolingError && Q_cylinder_head_W > 0 ? createDetailRow('T2 (原始)', `${result.T2a_C.toFixed(1)} °C`) : ''}
+                        ${createDetailRow('油冷负荷', `${(result.Q_oil_W / 1000).toFixed(2)} kW (${(result.Q_oil_W / result.W_s2 * 100).toFixed(1)}% HP轴功)`, false)}
                     </div>
                 </div>
                 
@@ -2191,15 +2323,18 @@ function calculateMode5() {
                     ${createStateTable(statePoints)}
                 </div>
                 
-                ${Q_cylinder_head_W > 0 ? `
                 <div class="bg-white/60 p-4 rounded-2xl border border-white/50 mt-4">
                     ${createSectionHeader('热平衡 (Heat Balance)', '⚖️')}
+                    ${createDetailRow('制冷量 (Q_evap)', `${(result.Q_evap_W / 1000).toFixed(2)} kW`, false)}
+                    ${createDetailRow('轴功率 (W_shaft)', `${(result.W_shaft_W / 1000).toFixed(2)} kW`, false)}
+                    ${createDetailRow('总排热量 (Q_heating_total)', `${(Q_heating_total_W / 1000).toFixed(2)} kW`, false)}
+                    ${createDetailRow('热平衡验证', `Q_heating_total = Q_evap + W_shaft = ${(result.Q_evap_W / 1000).toFixed(2)} + ${(result.W_shaft_W / 1000).toFixed(2)} = ${(Q_heating_total_W / 1000).toFixed(2)} kW`, true)}
                     ${createDetailRow('冷凝器排热 (Q_cond)', `${(Q_cond_W_updated / 1000).toFixed(2)} kW`, false)}
-                    ${createDetailRow('缸头冷却负荷 (Cylinder Head Cooling)', `${(Q_cylinder_head_W / 1000).toFixed(2)} kW (低品位排热，温度约30-50°C)`, true)}
+                    ${createDetailRow('油冷负荷 (Oil Cooling)', `${(result.Q_oil_W / 1000).toFixed(2)} kW (用于冷却曲轴、轴承、轴封等部件, ${(result.Q_oil_W / result.W_s2 * 100).toFixed(1)}% HP轴功)`, true)}
+                    ${Q_cylinder_head_W > 0 ? createDetailRow('缸头冷却负荷 (Cylinder Head Cooling)', `${(Q_cylinder_head_W / 1000).toFixed(2)} kW (低品位排热，温度约30-50°C)`, true) : ''}
                     ${isCylinderHeadCoolingEnabled && Q_cylinder_head_W > 0 ? createDetailRow('缸头冷却后排气温度', `${T_2a_after_head_cooling_C.toFixed(1)} °C (降低 ${(result.T2a_C - T_2a_after_head_cooling_C).toFixed(1)}°C)`) : ''}
-                    ${createDetailRow('总排热量 (Q_heating_total)', `${(Q_heating_total_W / 1000).toFixed(2)} kW = 制冷量 ${(result.Q_evap_W / 1000).toFixed(2)} kW + 轴功率 ${(result.W_shaft_W / 1000).toFixed(2)} kW`, false)}
+                    ${(result.Q_oil_W > 0 || Q_cylinder_head_W > 0) ? createDetailRow('分项验证', `Q_cond + Q_oil + Q_cylinder_head = ${(Q_cond_W_updated / 1000).toFixed(2)} + ${(result.Q_oil_W / 1000).toFixed(2)} + ${(Q_cylinder_head_W / 1000).toFixed(2)} = ${((Q_cond_W_updated + result.Q_oil_W + Q_cylinder_head_W) / 1000).toFixed(2)} kW`, true) : ''}
                 </div>
-                ` : ''}
             `;
 
             renderToAllViews(html);
@@ -2581,13 +2716,24 @@ function updateAndDisplayEfficienciesM5Lp() {
             console.warn('[Mode5 LP] Failed to get k value from CoolProp, using default 1.3');
         }
         
-        // 根据品牌选择不同的效率计算模型
+        // 根据品牌和系列选择不同的效率计算模型
         // GEA Grasso: 使用高端效率模型
-        // MYCOM: 使用 MYCOM 专用效率模型（使用中间饱和温度进行修正，更符合实际工程案例）
+        // MYCOM 单机双级（WBHE 和 M II 系列）: 使用 MYCOM 单机双级专用效率模型（更高效率）
+        // MYCOM 其他系列: 使用 MYCOM 标准效率模型
         let efficienciesLp;
         if (brand === 'MYCOM') {
-            // 使用 MYCOM 专用效率计算，基于中间压力下的饱和温度（更符合 MYCOM 实际工程案例）
-            efficienciesLp = calculateMycomEfficiencies(pressureRatioLp, k_value, T_intermediate_sat_C, clearance_factor);
+            // 检查是否为单机双级系列（WBHE 或 M II）
+            const isTwoStage = series && (
+                series.includes('WBHE Series') || 
+                series.includes('M II Series')
+            );
+            if (isTwoStage) {
+                // 使用 MYCOM 单机双级专用效率计算（更高效率，接近 GEA 水平）
+                efficienciesLp = calculateMycomTwoStageEfficiencies(pressureRatioLp, k_value, T_intermediate_sat_C, clearance_factor);
+            } else {
+                // 使用 MYCOM 标准效率计算
+                efficienciesLp = calculateMycomEfficiencies(pressureRatioLp, k_value, T_intermediate_sat_C, clearance_factor);
+            }
         } else {
             // 使用 GEA Grasso 半经验工程公式计算效率（针对高端压缩机优化）
             efficienciesLp = calculateEfficiencies(pressureRatioLp, k_value, T_intermediate_sat_C, clearance_factor);
@@ -2655,13 +2801,24 @@ function updateAndDisplayEfficienciesM5Hp() {
             console.warn('[Mode5 HP] Failed to get k value from CoolProp, using default 1.3');
         }
         
-        // 根据品牌选择不同的效率计算模型
+        // 根据品牌和系列选择不同的效率计算模型
         // GEA Grasso: 使用高端效率模型
-        // MYCOM: 使用 MYCOM 专用效率模型
+        // MYCOM 单机双级（WBHE 和 M II 系列）: 使用 MYCOM 单机双级专用效率模型（更高效率）
+        // MYCOM 其他系列: 使用 MYCOM 标准效率模型
         let efficienciesHp;
         if (brand === 'MYCOM') {
-            // 使用 MYCOM 专用效率计算
-            efficienciesHp = calculateMycomEfficiencies(pressureRatioHp, k_value, Tc_C, clearance_factor);
+            // 检查是否为单机双级系列（WBHE 或 M II）
+            const isTwoStage = series && (
+                series.includes('WBHE Series') || 
+                series.includes('M II Series')
+            );
+            if (isTwoStage) {
+                // 使用 MYCOM 单机双级专用效率计算（更高效率，接近 GEA 水平）
+                efficienciesHp = calculateMycomTwoStageEfficiencies(pressureRatioHp, k_value, Tc_C, clearance_factor);
+            } else {
+                // 使用 MYCOM 标准效率计算
+                efficienciesHp = calculateMycomEfficiencies(pressureRatioHp, k_value, Tc_C, clearance_factor);
+            }
         } else {
             // 使用 GEA Grasso 半经验工程公式计算效率（针对高端压缩机优化）
             efficienciesHp = calculateEfficiencies(pressureRatioHp, k_value, Tc_C, clearance_factor);

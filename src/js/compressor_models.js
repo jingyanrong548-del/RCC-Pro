@@ -488,6 +488,83 @@ export const COMPRESSOR_MODELS = {
                 debug_reference: 'At 970 rpm, 62WBHE: LP=464 m³/h, HP=155 m³/h (sample data)'
             }
         ],
+        'M II Series (Two Stage Open Type)': [
+            {
+                model: '62M II',
+                displacement: 620,  // 低压级排量 @970rpm（样本值）
+                disp_lp: 620,  // 低压级排量 (m³/h) @970rpm
+                disp_hp: 207,  // 高压级排量 (m³/h) @970rpm
+                vi_ratio: 620 / 207,  // 容积比 (Vi,L / Vi,H) ≈ 2.99
+                referenceRpm: 970,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 620,  // 参考转速下的低压级排量（样本值）
+                swept_volume_max_m3h: 958.76,  // 最大转速1500rpm下的低压级扫气量（用于计算）
+                cylinders_lp: 6,  // 低压级气缸数
+                cylinders_hp: 2,  // 高压级气缸数
+                cylinders: 8,  // 总气缸数（6+2）
+                bore_mm: 146,  // 缸径（样本数据）
+                stroke_mm: 106,  // 行程（样本数据）
+                max_rpm: 1500,
+                rpm_range: [800, 1500],  // 样本标注：800-1500 rpm
+                clearance_factor: 0.035,  // 高效氨机典型值（与M-II单级系列相同）
+                refrigerants: ['R717', 'R404A', 'R507A'],  // 样本数据：Ammonia / HFCs (R404A, R507A)
+                capacity_control: [100, 66, 33],  // 容量控制：100/66/33（样本数据）
+                drive_method: 'Direct drive / Overhang motor / V-belt',  // 驱动方式（样本数据）
+                // 样本数据：62M II @970rpm = 低段 620 m³/h, 高段 207 m³/h，缸径146mm，行程106mm
+                // 样本说明：新一代节能压缩机，性能、耐久性和耐高压性卓越，适用于大型深冷应用
+                // 大修间隔大幅延长至16,000小时（相比传统M系列翻倍）
+                debug_reference: 'At 970 rpm, 62M II: LP=620 m³/h, HP=207 m³/h (sample data from MYCOM M II-SERIES brochure)'
+            }
+        ],
+        'WA Series (Two Stage Open Type)': [
+            {
+                model: '42WA',
+                displacement: 125,  // 低压级排量 @970rpm（样本值）
+                disp_lp: 125,  // 低压级排量 (m³/h) @970rpm
+                disp_hp: 62.7,  // 高压级排量 (m³/h) @970rpm
+                vi_ratio: 125 / 62.7,  // 容积比 (Vi,L / Vi,H) ≈ 1.99
+                referenceRpm: 970,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 125,  // 参考转速下的低压级排量（样本值）
+                swept_volume_max_m3h: 193.30,  // 最大转速1500rpm下的低压级扫气量（用于计算）
+                cylinders_lp: 4,  // 低压级气缸数
+                cylinders_hp: 2,  // 高压级气缸数
+                cylinders: 6,  // 总气缸数（4+2）
+                bore_mm: 95,  // 缸径（样本数据）
+                stroke_mm: 76,  // 行程（样本数据）
+                max_rpm: 1500,
+                rpm_range: [800, 1500],  // 样本标注：800-1500 rpm
+                clearance_factor: 0.04,  // 中型压缩机典型值
+                refrigerants: ['R717', 'R404A', 'R507A'],  // 样本数据：氨 / HFCs (R404A, R507A)
+                capacity_control: [100, 50],  // 容量控制：100/50（样本数据）
+                drive_method: 'Direct drive / V-belt',  // 驱动方式（样本数据）
+                // 样本数据：42WA @970rpm = 低段 125 m³/h, 高段 62.7 m³/h，缸径95mm，行程76mm
+                // 样本说明：适用于风冷冷凝器，适用于中小规模深冷应用，长销型号，高可靠性
+                debug_reference: 'At 970 rpm, 42WA: LP=125 m³/h, HP=62.7 m³/h (sample data from MYCOM WA-SERIES brochure)'
+            },
+            {
+                model: '62WA',
+                displacement: 188,  // 低压级排量 @970rpm（样本值）
+                disp_lp: 188,  // 低压级排量 (m³/h) @970rpm
+                disp_hp: 62.7,  // 高压级排量 (m³/h) @970rpm
+                vi_ratio: 188 / 62.7,  // 容积比 (Vi,L / Vi,H) ≈ 3.00
+                referenceRpm: 970,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 188,  // 参考转速下的低压级排量（样本值）
+                swept_volume_max_m3h: 290.72,  // 最大转速1500rpm下的低压级扫气量（用于计算）
+                cylinders_lp: 6,  // 低压级气缸数
+                cylinders_hp: 2,  // 高压级气缸数
+                cylinders: 8,  // 总气缸数（6+2）
+                bore_mm: 95,  // 缸径（样本数据）
+                stroke_mm: 76,  // 行程（样本数据）
+                max_rpm: 1500,
+                rpm_range: [800, 1500],  // 样本标注：800-1500 rpm
+                clearance_factor: 0.04,  // 中型压缩机典型值
+                refrigerants: ['R717', 'R404A', 'R507A'],  // 样本数据：氨 / HFCs (R404A, R507A)
+                capacity_control: [100, 66, 33],  // 容量控制：100/66/33（样本数据）
+                drive_method: 'Direct drive / V-belt',  // 驱动方式（样本数据）
+                // 样本数据：62WA @970rpm = 低段 188 m³/h, 高段 62.7 m³/h，缸径95mm，行程76mm
+                // 样本说明：适用于风冷冷凝器，适用于中小规模深冷应用，长销型号，高可靠性
+                debug_reference: 'At 970 rpm, 62WA: LP=188 m³/h, HP=62.7 m³/h (sample data from MYCOM WA-SERIES brochure)'
+            }
+        ],
         'WA Series (Medium Size Single-Stage)': [
             {
                 model: '4WA',
@@ -856,6 +933,20 @@ export const DISCHARGE_TEMP_LIMITS = {
         warning: 140,  // °C - 标准氨制冷/热泵工况警告温度
         trip: 150      // °C - 标准氨制冷/热泵工况跳闸温度
     },
+    // MYCOM M II Series (Two Stage Open Type) - 双级开放式系列（新一代）
+    // 根据MYCOM技术资料，M II系列为新一代高效双级压缩机，设计压力与标准氨系列类似
+    // 采用新设计的阀结构，大修间隔延长至16,000小时，适用于大型深冷应用
+    'M II Series (Two Stage Open Type)': {
+        warning: 140,  // °C - 标准氨制冷/热泵工况警告温度
+        trip: 150      // °C - 标准氨制冷/热泵工况跳闸温度
+    },
+    // MYCOM WA Series (Two Stage Open Type) - 双级开放式系列（中型）
+    // 根据MYCOM技术资料，WA系列双级压缩机为中型双级压缩机，适用于风冷冷凝器
+    // 设计压力与标准氨系列类似，用于标准制冷/热泵应用（特别是中小规模深冷应用）
+    'WA Series (Two Stage Open Type)': {
+        warning: 140,  // °C - 标准氨制冷/热泵工况警告温度
+        trip: 150      // °C - 标准氨制冷/热泵工况跳闸温度
+    },
     // MYCOM WA Series (Medium Size Single-Stage) - 中型单级系列
     // 根据MYCOM技术资料，WA系列为中型单级压缩机，适用于风冷冷凝器
     // 设计压力与标准氨系列类似，用于标准制冷/热泵应用
@@ -954,10 +1045,10 @@ export function getFilteredBrands(mode) {
  * @returns {string[]} 过滤后的系列名称数组
  */
 export function getFilteredSeriesByBrand(mode, brand, level = null) {
-    // Mode 5 (单机双级): MYCOM 品牌只返回 WBHE 系列，GEA Grasso 品牌返回所有系列
+    // Mode 5 (单机双级): MYCOM 品牌返回 WBHE、M II 和 WA 双级系列，GEA Grasso 品牌返回所有系列
     if (mode === 'm5') {
         if (brand === 'MYCOM') {
-            return ['WBHE Series (Two Stage Open Type)'];
+            return ['WBHE Series (Two Stage Open Type)', 'M II Series (Two Stage Open Type)', 'WA Series (Two Stage Open Type)'];
         } else if (brand === 'GEA Grasso') {
             // GEA Grasso 品牌的所有系列都可用
             return getSeriesByBrand(brand);
