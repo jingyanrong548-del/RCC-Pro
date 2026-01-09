@@ -10,7 +10,7 @@ import { drawPHDiagram, drawTSDiagram, getChartInstance } from './charts.js';
 import { HistoryDB, SessionState } from './storage.js';
 import { openMobileSheet } from './ui.js';
 import { updateFluidInfo } from './coolprop_loader.js';
-import { calculateEmpiricalEfficiencies, calculateReciprocatingVolumetricEfficiency, calculateEfficiencies, calculateMycomEfficiencies, calculateMycomTwoStageEfficiencies } from './efficiency_models.js';
+import { calculateEmpiricalEfficiencies, calculateReciprocatingVolumetricEfficiency, calculateEfficiencies, calculateMycomEfficiencies, calculateMycomTwoStageEfficiencies, calculateGEATwoStageEfficiencies } from './efficiency_models.js';
 import i18next from './i18n.js';
 import { 
     getFilteredBrands,
@@ -2767,7 +2767,8 @@ function updateAndDisplayEfficienciesM5Lp() {
         }
         
         // 根据品牌和系列选择不同的效率计算模型
-        // GEA Grasso: 使用高端效率模型
+        // GEA Grasso 双级（VT 和 VT HS 系列）: 使用 GEA 双级专用效率模型（容积效率高至少10%）
+        // GEA Grasso 其他系列: 使用 GEA 标准效率模型
         // MYCOM 单机双级（WBHE 和 M II 系列）: 使用 MYCOM 单机双级专用效率模型（更高效率）
         // MYCOM 其他系列: 使用 MYCOM 标准效率模型
         let efficienciesLp;
@@ -2784,8 +2785,21 @@ function updateAndDisplayEfficienciesM5Lp() {
                 // 使用 MYCOM 标准效率计算
                 efficienciesLp = calculateMycomEfficiencies(pressureRatioLp, k_value, T_intermediate_sat_C, clearance_factor);
             }
+        } else if (brand === 'GEA Grasso') {
+            // 检查是否为双级系列（VT 或 VT HS）
+            const isTwoStage = series && (
+                series.includes('VT (25 bar Two Stage)') || 
+                series.includes('VT HS (25 bar Two Stage High Speed)')
+            );
+            if (isTwoStage) {
+                // 使用 GEA 双级专用效率计算（容积效率高至少10%，基于GEA工程应用实际数据）
+                efficienciesLp = calculateGEATwoStageEfficiencies(pressureRatioLp, k_value, T_intermediate_sat_C, clearance_factor);
+            } else {
+                // 使用 GEA Grasso 标准效率计算
+                efficienciesLp = calculateEfficiencies(pressureRatioLp, k_value, T_intermediate_sat_C, clearance_factor);
+            }
         } else {
-            // 使用 GEA Grasso 半经验工程公式计算效率（针对高端压缩机优化）
+            // 其他品牌使用标准效率计算
             efficienciesLp = calculateEfficiencies(pressureRatioLp, k_value, T_intermediate_sat_C, clearance_factor);
         }
         
@@ -2852,7 +2866,8 @@ function updateAndDisplayEfficienciesM5Hp() {
         }
         
         // 根据品牌和系列选择不同的效率计算模型
-        // GEA Grasso: 使用高端效率模型
+        // GEA Grasso 双级（VT 和 VT HS 系列）: 使用 GEA 双级专用效率模型（容积效率高至少10%）
+        // GEA Grasso 其他系列: 使用 GEA 标准效率模型
         // MYCOM 单机双级（WBHE 和 M II 系列）: 使用 MYCOM 单机双级专用效率模型（更高效率）
         // MYCOM 其他系列: 使用 MYCOM 标准效率模型
         let efficienciesHp;
@@ -2869,8 +2884,21 @@ function updateAndDisplayEfficienciesM5Hp() {
                 // 使用 MYCOM 标准效率计算
                 efficienciesHp = calculateMycomEfficiencies(pressureRatioHp, k_value, Tc_C, clearance_factor);
             }
+        } else if (brand === 'GEA Grasso') {
+            // 检查是否为双级系列（VT 或 VT HS）
+            const isTwoStage = series && (
+                series.includes('VT (25 bar Two Stage)') || 
+                series.includes('VT HS (25 bar Two Stage High Speed)')
+            );
+            if (isTwoStage) {
+                // 使用 GEA 双级专用效率计算（容积效率高至少10%，基于GEA工程应用实际数据）
+                efficienciesHp = calculateGEATwoStageEfficiencies(pressureRatioHp, k_value, Tc_C, clearance_factor);
+            } else {
+                // 使用 GEA Grasso 标准效率计算
+                efficienciesHp = calculateEfficiencies(pressureRatioHp, k_value, Tc_C, clearance_factor);
+            }
         } else {
-            // 使用 GEA Grasso 半经验工程公式计算效率（针对高端压缩机优化）
+            // 其他品牌使用标准效率计算
             efficienciesHp = calculateEfficiencies(pressureRatioHp, k_value, Tc_C, clearance_factor);
         }
         

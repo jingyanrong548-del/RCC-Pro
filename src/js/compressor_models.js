@@ -319,6 +319,220 @@ export const COMPRESSOR_MODELS = {
                 clearance_factor: 0.035,
                 refrigerants: ['R717']
             }
+        ],
+        'Grasso VT (25 bar Two Stage)': [
+            {
+                model: 'V 300T-2',
+                displacement: 218,  // 低压级排量（基于最大转速1500rpm）
+                disp_lp: 218,  // 低压级排量 (m³/h) @1500rpm（3缸）
+                disp_hp: 73,  // 高压级排量 (m³/h) @1500rpm（1缸），按容积比3:1估算
+                vi_ratio: 218 / 73,  // 容积比 ≈ 2.99
+                swept_volume_max_m3h: 218,  // 最大转速下的低压级扫气量
+                cylinders_lp: 3,  // 低压级气缸数
+                cylinders_hp: 1,  // 高压级气缸数
+                cylinders: 4,  // 总气缸数（3+1）
+                max_rpm: 1500,
+                rpm_range: [500, 1500],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            },
+            {
+                model: 'V 450T-2',
+                displacement: 327,  // 低压级排量（基于最大转速1500rpm）
+                disp_lp: 327,  // 低压级排量 (m³/h) @1500rpm（4缸）
+                disp_hp: 164,  // 高压级排量 (m³/h) @1500rpm（2缸），按容积比2:1估算
+                vi_ratio: 327 / 164,  // 容积比 ≈ 2.00
+                swept_volume_max_m3h: 327,
+                cylinders_lp: 4,
+                cylinders_hp: 2,
+                cylinders: 6,
+                max_rpm: 1500,
+                rpm_range: [500, 1500],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            },
+            {
+                model: 'V 600T-2',
+                displacement: 436,  // 低压级排量（基于最大转速1500rpm）
+                disp_lp: 436,  // 低压级排量 (m³/h) @1500rpm（6缸）
+                disp_hp: 145,  // 高压级排量 (m³/h) @1500rpm（2缸），按容积比3:1估算
+                vi_ratio: 436 / 145,  // 容积比 ≈ 3.01
+                swept_volume_max_m3h: 436,
+                cylinders_lp: 6,
+                cylinders_hp: 2,
+                cylinders: 8,
+                max_rpm: 1500,
+                rpm_range: [500, 1500],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            },
+            {
+                model: 'V 700T-2',
+                displacement: 509,  // 低压级排量（基于最大转速1200rpm）
+                disp_lp: 509,  // 低压级排量 (m³/h) @1200rpm（4缸）
+                disp_hp: 170,  // 高压级排量 (m³/h) @1200rpm（2缸），按容积比3:1估算
+                vi_ratio: 509 / 170,  // 容积比 ≈ 3.00
+                swept_volume_max_m3h: 509,
+                cylinders_lp: 4,
+                cylinders_hp: 2,
+                cylinders: 6,
+                max_rpm: 1200,
+                rpm_range: [500, 1200],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            },
+            {
+                model: 'V 1100T-2',
+                displacement: 728,  // 低压级排量（基于最大转速1200rpm）
+                disp_lp: 728,  // 低压级排量 (m³/h) @1200rpm（6缸）
+                disp_hp: 243,  // 高压级排量 (m³/h) @1200rpm（2缸），按容积比3:1估算
+                vi_ratio: 728 / 243,  // 容积比 ≈ 3.00
+                swept_volume_max_m3h: 728,
+                cylinders_lp: 6,
+                cylinders_hp: 2,
+                cylinders: 8,
+                max_rpm: 1200,
+                rpm_range: [500, 1200],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            },
+            {
+                model: 'V 1400T-2',
+                displacement: 945,  // 低压级排量（基于最大转速1200rpm）
+                disp_lp: 945,  // 低压级排量 (m³/h) @1200rpm（8缸）
+                disp_hp: 283,  // 高压级排量 (m³/h) @1200rpm（2缸），按容积比3.34:1估算
+                vi_ratio: 945 / 283,  // 容积比 ≈ 3.34
+                swept_volume_max_m3h: 945,
+                cylinders_lp: 8,
+                cylinders_hp: 2,
+                cylinders: 10,
+                max_rpm: 1200,
+                rpm_range: [500, 1200],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            },
+            {
+                model: 'V 1800T-2',
+                displacement: 1114,  // 低压级排量（基于最大转速1200rpm）
+                disp_lp: 1114,  // 低压级排量 (m³/h) @1200rpm（7缸）
+                disp_hp: 371,  // 高压级排量 (m³/h) @1200rpm（3缸），按容积比3:1估算
+                vi_ratio: 1114 / 371,  // 容积比 ≈ 3.00
+                swept_volume_max_m3h: 1114,
+                cylinders_lp: 7,
+                cylinders_hp: 3,
+                cylinders: 10,
+                max_rpm: 1200,
+                rpm_range: [500, 1200],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            }
+        ],
+        'Grasso VT HS (25 bar Two Stage High Speed)': [
+            {
+                model: 'V 300T-2 HS',
+                displacement: 262,  // 低压级排量（基于最大转速1800rpm）
+                disp_lp: 262,  // 低压级排量 (m³/h) @1800rpm（3缸）
+                disp_hp: 88,  // 高压级排量 (m³/h) @1800rpm（1缸），按容积比3:1估算
+                vi_ratio: 262 / 88,  // 容积比 ≈ 2.98
+                swept_volume_max_m3h: 262,
+                cylinders_lp: 3,
+                cylinders_hp: 1,
+                cylinders: 4,
+                max_rpm: 1800,
+                rpm_range: [500, 1800],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            },
+            {
+                model: 'V 450T-2 HS',
+                displacement: 393,  // 低压级排量（基于最大转速1800rpm）
+                disp_lp: 393,  // 低压级排量 (m³/h) @1800rpm（4缸）
+                disp_hp: 197,  // 高压级排量 (m³/h) @1800rpm（2缸），按容积比2:1估算
+                vi_ratio: 393 / 197,  // 容积比 ≈ 2.00
+                swept_volume_max_m3h: 393,
+                cylinders_lp: 4,
+                cylinders_hp: 2,
+                cylinders: 6,
+                max_rpm: 1800,
+                rpm_range: [500, 1800],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            },
+            {
+                model: 'V 600T-2 HS',
+                displacement: 524,  // 低压级排量（基于最大转速1800rpm）
+                disp_lp: 524,  // 低压级排量 (m³/h) @1800rpm（6缸）
+                disp_hp: 175,  // 高压级排量 (m³/h) @1800rpm（2缸），按容积比3:1估算
+                vi_ratio: 524 / 175,  // 容积比 ≈ 3.00
+                swept_volume_max_m3h: 524,
+                cylinders_lp: 6,
+                cylinders_hp: 2,
+                cylinders: 8,
+                max_rpm: 1800,
+                rpm_range: [500, 1800],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            },
+            {
+                model: 'V 700T-2 HS',
+                displacement: 611,  // 低压级排量（基于最大转速1800rpm）
+                disp_lp: 611,  // 低压级排量 (m³/h) @1800rpm（4缸）
+                disp_hp: 204,  // 高压级排量 (m³/h) @1800rpm（2缸），按容积比3:1估算
+                vi_ratio: 611 / 204,  // 容积比 ≈ 3.00
+                swept_volume_max_m3h: 611,
+                cylinders_lp: 4,
+                cylinders_hp: 2,
+                cylinders: 6,
+                max_rpm: 1800,
+                rpm_range: [500, 1800],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            },
+            {
+                model: 'V 1100T-2 HS',
+                displacement: 873,  // 低压级排量（基于最大转速1800rpm）
+                disp_lp: 873,  // 低压级排量 (m³/h) @1800rpm（6缸）
+                disp_hp: 291,  // 高压级排量 (m³/h) @1800rpm（2缸），按容积比3:1估算
+                vi_ratio: 873 / 291,  // 容积比 ≈ 3.00
+                swept_volume_max_m3h: 873,
+                cylinders_lp: 6,
+                cylinders_hp: 2,
+                cylinders: 8,
+                max_rpm: 1800,
+                rpm_range: [500, 1800],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            },
+            {
+                model: 'V 1400T-2 HS',
+                displacement: 1134,  // 低压级排量（基于最大转速1800rpm）
+                disp_lp: 1134,  // 低压级排量 (m³/h) @1800rpm（8缸）
+                disp_hp: 340,  // 高压级排量 (m³/h) @1800rpm（2缸），按容积比3.33:1估算
+                vi_ratio: 1134 / 340,  // 容积比 ≈ 3.33
+                swept_volume_max_m3h: 1134,
+                cylinders_lp: 8,
+                cylinders_hp: 2,
+                cylinders: 10,
+                max_rpm: 1800,
+                rpm_range: [500, 1800],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            },
+            {
+                model: 'V 1800T-2 HS',
+                displacement: 1395,  // 低压级排量（基于最大转速1500rpm）
+                disp_lp: 1395,  // 低压级排量 (m³/h) @1500rpm（7缸）
+                disp_hp: 465,  // 高压级排量 (m³/h) @1500rpm（3缸），按容积比3:1估算
+                vi_ratio: 1395 / 465,  // 容积比 ≈ 3.00
+                swept_volume_max_m3h: 1395,
+                cylinders_lp: 7,
+                cylinders_hp: 3,
+                cylinders: 10,
+                max_rpm: 1500,
+                rpm_range: [500, 1500],
+                clearance_factor: 0.035,
+                refrigerants: ['R717']
+            }
         ]
     },
     'MYCOM': {
@@ -932,6 +1146,22 @@ export const DISCHARGE_TEMP_LIMITS = {
         warning: 130,  // °C - CO2工况警告温度（CO2对温度更敏感，需要更保守的限制）
         trip: 140      // °C - CO2工况跳闸温度（CO2工况绝对限制，超过此温度存在严重风险）
     },
+    
+    // 7. Grasso VT (25 bar Two Stage) - 双级系列
+    // 设计压力：25 bar，专门设计用于深冷应用（NH3 freezing applications）
+    // 双级压缩设计，用于降低排气温度，温度限制与标准V系列相同
+    'Grasso VT (25 bar Two Stage)': {
+        warning: 140,  // °C - 标准氨制冷工况警告温度（与标准V系列相同，基于25 bar设计压力）
+        trip: 150      // °C - 标准氨制冷工况跳闸温度（与标准V系列相同）
+    },
+    
+    // 8. Grasso VT HS (25 bar Two Stage High Speed) - 双级高速系列
+    // 设计压力：25 bar，高速运行（最高1800 RPM），双级压缩设计
+    // 虽然转速更高，但温度限制基于设计压力和材料，与标准V系列相同
+    'Grasso VT HS (25 bar Two Stage High Speed)': {
+        warning: 140,  // °C - 标准氨制冷工况警告温度（与标准V系列相同，基于25 bar设计压力）
+        trip: 150      // °C - 标准氨制冷工况跳闸温度（与标准V系列相同）
+    },
     // MYCOM HS Series (High Pressure Heat Pump) - 高压热泵系列 (6.0 MPaG / 60 bar)
     // 根据MYCOM技术资料，HS系列设计用于高温热泵应用（可达90°C供水）
     // 90°C供水对应更高排气温度，因此提高温度限制
@@ -1078,13 +1308,13 @@ export function getFilteredBrands(mode) {
  * @returns {string[]} 过滤后的系列名称数组
  */
 export function getFilteredSeriesByBrand(mode, brand, level = null) {
-    // Mode 5 (单机双级): MYCOM 品牌返回 WBHE、M II、WA 和 K 双级系列，GEA Grasso 品牌返回所有系列
+    // Mode 5 (单机双级): MYCOM 品牌返回 WBHE、M II、WA 和 K 双级系列，GEA Grasso 品牌只返回双级系列
     if (mode === 'm5') {
         if (brand === 'MYCOM') {
             return ['WBHE Series (Two Stage Open Type)', 'M II Series (Two Stage Open Type)', 'WA Series (Two Stage Open Type)', 'K Series (Two Stage Open Type)'];
         } else if (brand === 'GEA Grasso') {
-            // GEA Grasso 品牌的所有系列都可用
-            return getSeriesByBrand(brand);
+            // GEA Grasso 品牌只返回双级系列（VT 和 VT HS）
+            return ['Grasso VT (25 bar Two Stage)', 'Grasso VT HS (25 bar Two Stage High Speed)'];
         }
     }
     

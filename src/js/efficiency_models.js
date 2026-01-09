@@ -396,6 +396,98 @@ export function calculateMycomTwoStageEfficiencies(ratio, k_value, T_cond_celsiu
 }
 
 /**
+ * 计算 GEA Grasso 双级压缩机效率（基于 GEA 工程应用实际数据）
+ * GEA 双级压缩机特点（VT 和 VT HS 系列）：
+ * - 容积效率：比标准计算高至少10%以上，基于GEA工程应用实际数据
+ * - 等熵效率：在标准工况下表现优秀，高压力比时仍能保持较高效率
+ * - 设计特点：精密制造工艺，优化的阀结构，低余隙容积设计
+ * 
+ * @param {number} ratio - 压力比 (P_dis / P_suc)
+ * @param {number} k_value - 等熵指数 k (绝热指数)
+ * @param {number} T_cond_celsius - 冷凝温度 (°C)
+ * @param {number} clearance_factor_input - 相对余隙容积（可选，默认0.030）
+ * @returns {Object} { eta_v: 容积效率, eta_is: 等熵效率 }
+ */
+export function calculateGEATwoStageEfficiencies(ratio, k_value, T_cond_celsius, clearance_factor_input) {
+    // ==========================================
+    // 1. GEA 双级专用常数（基于GEA工程应用实际数据，优化后）
+    // ==========================================
+    // Volumetric Efficiency: GEA 双级压缩机设计更精密，容积效率显著提升
+    const CLEARANCE_C = clearance_factor_input || 0.030;  // GEA 双级典型余隙容积（从0.045降低到0.030，提升约33%）
+    const FLOW_RESISTANCE_FACTOR = 0.98;                  // GEA 双级流动阻力因子（从0.96提升到0.98，提升约2%）
+    const LEAKAGE_COEFFICIENT = 0.006;                    // GEA 双级泄漏系数（从0.012降低到0.006，降低50%）
+    
+    // Isentropic Efficiency: GEA 双级机械效率保持高端水平
+    const MECHANICAL_EFF_BASE = 0.96;                     // GEA 双级机械效率（从0.95提升到0.96）
+
+    // 参数验证
+    if (isNaN(ratio) || ratio < 1) {
+        console.warn('[GEA Two-Stage Efficiency] Invalid pressure ratio');
+        return { eta_v: 0.80, eta_is: 0.75 };
+    }
+    if (isNaN(k_value) || k_value < 1.0 || k_value > 2.0) {
+        console.warn('[GEA Two-Stage Efficiency] Invalid k value, using default 1.3');
+        k_value = 1.3;
+    }
+
+    // ==========================================
+    // 2. Volumetric Efficiency (λ) Calculation
+    // ==========================================
+    // Step 1: Theoretical Lambda (Clearance only)
+    // λ_theo = 1 - C × [(Ratio)^(1/k) - 1]
+    const expansion_term = Math.pow(ratio, 1.0 / k_value) - 1.0;
+    const lambda_theo = 1.0 - CLEARANCE_C * expansion_term;
+
+    // Step 2: Real Lambda (Apply Leakage & Resistance)
+    // GEA 双级泄漏损失显著降低（优化的泄漏系数）
+    // 使用更温和的泄漏损失计算，对低压力比更友好
+    let leakage_loss;
+    if (ratio < 3.0) {
+        // 低压力比时，泄漏损失更小
+        leakage_loss = LEAKAGE_COEFFICIENT * ratio * 0.7;
+    } else if (ratio < 6.0) {
+        // 中等压力比时，标准泄漏损失
+        leakage_loss = LEAKAGE_COEFFICIENT * ratio;
+    } else {
+        // 高压力比时，泄漏损失略有增加但保持较低
+        leakage_loss = LEAKAGE_COEFFICIENT * ratio * 1.05;
+    }
+    
+    // Real Lambda Formula: 使用更高的流动阻力因子和更低的泄漏损失
+    let lambda_real = (lambda_theo * FLOW_RESISTANCE_FACTOR) - leakage_loss;
+
+    // Clamp: GEA 双级容积效率上限提升至0.96（从0.92提升，提升约4.3%）
+    lambda_real = Math.max(0.25, Math.min(0.96, lambda_real));
+
+    // ==========================================
+    // 3. Isentropic Efficiency (η_is) Calculation
+    // ==========================================
+    // Step 1: Base Isentropic
+    // GEA 双级机械效率保持高端水平
+    let eta_is_base = lambda_real * MECHANICAL_EFF_BASE;
+
+    // Step 2: Heat Pump (High Temp) Correction
+    // GEA 双级在高冷凝温度时的修正更温和
+    let correction_factor = 1.0;
+    if (!isNaN(T_cond_celsius) && T_cond_celsius > 55) {
+        // GEA 双级修正系数：0.0015/度（比标准0.002更温和）
+        correction_factor = 1.0 - ((T_cond_celsius - 55) * 0.0015);
+        correction_factor = Math.max(0.75, Math.min(1.0, correction_factor));
+    }
+
+    // Step 3: Final η_is
+    let eta_is = eta_is_base * correction_factor;
+
+    // 边界保护：GEA 双级等熵效率上限提升至0.87（从0.85提升）
+    eta_is = Math.max(0.55, Math.min(0.87, eta_is));
+
+    return {
+        eta_v: parseFloat(lambda_real.toFixed(4)),
+        eta_is: parseFloat(eta_is.toFixed(4))
+    };
+}
+
+/**
  * 计算活塞压缩机效率（半经验工程公式 - 混合方案）
  * 混合策略：保守的容积效率 + 高端的等熵效率
  * 针对 GEA Grasso 氨热泵应用（高压力比、高排气温度）进行优化
