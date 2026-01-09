@@ -239,14 +239,17 @@ function initCompressorModelSelectorsM7() {
         if (brand && series && model) {
             const detail = getModelDetail(brand, series, model);
             if (detail && detail.displacement !== null && detail.displacement !== undefined) {
-                const displacement = detail.displacement;
-                modelDisplacementValueM7.textContent = displacement.toFixed(0);
+                // 优先使用参考转速下的排量（如果存在），否则使用最大转速下的排量
+                const displayDisplacement = (detail.referenceDisplacement !== null && detail.referenceDisplacement !== undefined)
+                    ? detail.referenceDisplacement
+                    : detail.displacement;
+                modelDisplacementValueM7.textContent = displayDisplacement.toFixed(0);
                 
                 // 对于GEA系列，显示转速范围和理论流量说明
                 if (brand === 'GEA Grasso' && detail.rpm_range && Array.isArray(detail.rpm_range) && detail.rpm_range.length === 2) {
                     const [minRpm, maxRpm] = detail.rpm_range;
                     modelDisplacementInfoM7.innerHTML = `
-                        <span class="font-bold">理论流量:</span> <span id="model_displacement_value_m7">${displacement.toFixed(0)}</span> m³/h
+                        <span class="font-bold">理论流量:</span> <span id="model_displacement_value_m7">${displayDisplacement.toFixed(0)}</span> m³/h
                         <span class="ml-2 text-xs text-gray-600">(最大转速 ${maxRpm} RPM)</span>
                         <br>
                         <span class="text-xs text-gray-600">转速范围: ${minRpm}-${maxRpm} RPM</span>
@@ -255,15 +258,19 @@ function initCompressorModelSelectorsM7() {
                     // MYCOM系列：显示参考转速下的排量并注明rpm，同时显示转速范围
                     const [minRpm, maxRpm] = detail.rpm_range;
                     const referenceRpm = detail.referenceRpm;
+                    // 使用参考转速下的排量显示
+                    const referenceDisplacement = (detail.referenceDisplacement !== null && detail.referenceDisplacement !== undefined)
+                        ? detail.referenceDisplacement
+                        : displayDisplacement;
                     modelDisplacementInfoM7.innerHTML = `
-                        <span class="font-bold">理论排量:</span> <span id="model_displacement_value_m7">${displacement.toFixed(0)}</span> m³/h
+                        <span class="font-bold">理论排量:</span> <span id="model_displacement_value_m7">${referenceDisplacement.toFixed(0)}</span> m³/h
                         <span class="ml-2 text-xs text-gray-600">(@ ${referenceRpm} RPM)</span>
                         <br>
                         <span class="text-xs text-gray-600">转速范围: ${minRpm}-${maxRpm} RPM</span>
                     `;
                 } else {
                     // 其他品牌或没有转速范围信息的，显示基本排量信息
-                    let infoHtml = `<span class="font-bold">理论排量:</span> <span id="model_displacement_value_m7">${displacement.toFixed(0)}</span> m³/h`;
+                    let infoHtml = `<span class="font-bold">理论排量:</span> <span id="model_displacement_value_m7">${displayDisplacement.toFixed(0)}</span> m³/h`;
                     if (detail.referenceRpm) {
                         infoHtml += ` <span class="ml-2 text-xs text-gray-600">(@ ${detail.referenceRpm} RPM)</span>`;
                     }
@@ -342,10 +349,16 @@ function initCompressorModelSelectorsM7() {
                 const brand = compressorBrandM7.value;
                 const series = compressorSeriesM7.value;
                 const model = compressorModelM7.value;
-                const displacement = getDisplacementByModel(brand, series, model);
-                if (displacement !== null && flowM3hM7) {
-                    flowM3hM7.value = displacement.toFixed(2);
-                    setButtonStale7();
+                const detail = getModelDetail(brand, series, model);
+                if (detail) {
+                    // 优先使用参考转速下的排量（如果存在），否则使用最大转速下的排量
+                    const displacement = (detail.referenceDisplacement !== null && detail.referenceDisplacement !== undefined)
+                        ? detail.referenceDisplacement
+                        : detail.displacement;
+                    if (displacement !== null && flowM3hM7) {
+                        flowM3hM7.value = displacement.toFixed(2);
+                        setButtonStale7();
+                    }
                 }
             }
         });

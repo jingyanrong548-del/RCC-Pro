@@ -487,92 +487,200 @@ export const COMPRESSOR_MODELS = {
         ],
         'WA Series (Medium Size Single-Stage)': [
             {
+                model: '4WA',
+                displacement: 125,  // 参考转速970rpm下的理论排量（样本值）
+                referenceRpm: 970,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 125,  // 参考转速下的排量（样本值）
+                swept_volume_max_m3h: 193.30,  // 最大转速1500rpm下的扫气量（用于计算）
+                cylinders: 4,
+                max_rpm: 1500,
+                rpm_range: [800, 1500],  // 样本标注：800-1500 rpm
+                clearance_factor: 0.04,  // 中型压缩机典型值
+                refrigerants: ['R717', 'Propane', 'R134a', 'R404A', 'R507A', 'R23'],
+                // 样本数据：4WA @970rpm = 125 m³/h，缸径95mm，行程76mm
+                // 容量控制：100/50
+                debug_reference: 'At 970 rpm, 4WA displacement should be 125 m³/h (sample data)'
+            },
+            {
                 model: '6WA',
-                displacement: 580,  // 参考转速下的理论排量（待确认实际值）
-                referenceRpm: 1450,  // 参考转速（典型值）
-                referenceDisplacement: 580,  // 参考转速下的排量
-                swept_volume_max_m3h: 600.00,  // 最大转速1500rpm下的扫气量（用于计算）
+                displacement: 188,  // 参考转速970rpm下的理论排量（样本值）
+                referenceRpm: 970,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 188,  // 参考转速下的排量（样本值）
+                swept_volume_max_m3h: 290.72,  // 最大转速1500rpm下的扫气量（用于计算）
                 cylinders: 6,
                 max_rpm: 1500,
-                rpm_range: [800, 1500],  // 中型压缩机典型转速范围
+                rpm_range: [800, 1500],  // 样本标注：800-1500 rpm
                 clearance_factor: 0.04,  // 中型压缩机典型值
-                refrigerants: ['R717', 'Propane', 'HFCs'],
-                // 注意：排量数据需要根据实际样本确认
-                debug_reference: 'WA series - medium size single-stage compressor with proven track record'
+                refrigerants: ['R717', 'Propane', 'R134a', 'R404A', 'R507A', 'R23'],
+                // 样本数据：6WA @970rpm = 188 m³/h，缸径95mm，行程76mm
+                // 容量控制：100/66/33
+                debug_reference: 'At 970 rpm, 6WA displacement should be 188 m³/h (sample data)'
+            },
+            {
+                model: '8WA',
+                displacement: 251,  // 参考转速970rpm下的理论排量（样本值）
+                referenceRpm: 970,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 251,  // 参考转速下的排量（样本值）
+                swept_volume_max_m3h: 387.89,  // 最大转速1500rpm下的扫气量（用于计算）
+                cylinders: 8,
+                max_rpm: 1500,
+                rpm_range: [800, 1500],  // 样本标注：800-1500 rpm
+                clearance_factor: 0.04,  // 中型压缩机典型值
+                refrigerants: ['R717', 'Propane', 'R134a', 'R404A', 'R507A', 'R23'],
+                // 样本数据：8WA @970rpm = 251 m³/h，缸径95mm，行程76mm
+                // 容量控制：100/75/50/25
+                // 样本说明：适用于风冷冷凝器，适用于中小规模制冷和冷冻应用
+                debug_reference: 'At 970 rpm, 8WA displacement should be 251 m³/h (sample data)'
             }
         ],
         'K Series (Multi-Refrigerant Small Compressors)': [
             {
                 model: '2K',
-                displacement: 150,  // 参考转速下的理论排量（待确认实际值）
-                referenceRpm: 1450,  // 参考转速（典型值）
-                referenceDisplacement: 150,  // 参考转速下的排量
-                swept_volume_max_m3h: 186.21,  // 最大转速1800rpm下的扫气量（用于计算）
+                displacement: 79.7,  // 最大转速1800rpm下的理论排量（用于计算）
+                referenceRpm: 970,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 42.9,  // 参考转速970rpm下的排量（样本值）
+                swept_volume_max_m3h: 79.7,  // 最大转速1800rpm下的扫气量（用于计算）
                 cylinders: 2,
+                bore_mm: 85,  // 缸径（样本数据）
+                stroke_mm: 65,  // 行程（样本数据）
                 max_rpm: 1800,
-                rpm_range: [800, 1800],  // K系列支持800-1800rpm（官网说明）
+                rpm_range: [800, 1800],  // 样本标注：800-1800 rpm
                 clearance_factor: 0.04,  // 小型压缩机典型值
-                refrigerants: ['R717', 'Propane', 'HFCs'],
-                // 注意：排量数据需要根据实际样本确认
-                debug_reference: 'K series - multi-refrigerant small compressor, supports 800-1800rpm'
+                refrigerants: ['R717', 'Propane', 'Propylene', 'R134a', 'R407C', 'R407F', 'R404A', 'R507A'],
+                drive_method: 'Direct drive/V-belt',  // 驱动方式（样本数据）
+                capacity_control: {  // 容量控制（样本数据）
+                    'R717': [100, 50],  // 氨：100/50
+                    'Propane_Propylene_HFCs': [100, 50]  // 丙烷/丙烯/HFCs：100/50
+                },
+                // 样本数据：2K @970rpm = 42.9 m³/h，缸径85mm，行程65mm
+                // 容量控制：氨 100/50，丙烷/丙烯/HFCs 100/50
+                debug_reference: 'At 970 rpm, 2K displacement should be 42.9 m³/h (sample data)'
             },
             {
                 model: '4K',
-                displacement: 300,  // 参考转速下的理论排量（待确认实际值）
-                referenceRpm: 1450,  // 参考转速（典型值）
-                referenceDisplacement: 300,  // 参考转速下的排量
-                swept_volume_max_m3h: 372.41,  // 最大转速1800rpm下的扫气量（用于计算）
+                displacement: 159.5,  // 最大转速1800rpm下的理论排量（用于计算）
+                referenceRpm: 970,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 85.9,  // 参考转速970rpm下的排量（样本值）
+                swept_volume_max_m3h: 159.5,  // 最大转速1800rpm下的扫气量（用于计算）
                 cylinders: 4,
+                bore_mm: 85,  // 缸径（样本数据）
+                stroke_mm: 65,  // 行程（样本数据）
                 max_rpm: 1800,
-                rpm_range: [800, 1800],  // K系列支持800-1800rpm（官网说明）
+                rpm_range: [800, 1800],  // 样本标注：800-1800 rpm
                 clearance_factor: 0.04,  // 小型压缩机典型值
-                refrigerants: ['R717', 'Propane', 'HFCs'],
-                // 注意：排量数据需要根据实际样本确认
-                debug_reference: 'K series - multi-refrigerant small compressor, supports 800-1800rpm'
+                refrigerants: ['R717', 'Propane', 'Propylene', 'R134a', 'R407C', 'R407F', 'R404A', 'R507A'],
+                drive_method: 'Direct drive/V-belt',  // 驱动方式（样本数据）
+                capacity_control: {  // 容量控制（样本数据）
+                    'R717': [100, 50],  // 氨：100/50
+                    'Propane_Propylene_HFCs': [100, 75, 50, 25]  // 丙烷/丙烯/HFCs：100/75/50/25
+                },
+                // 样本数据：4K @970rpm = 85.9 m³/h，缸径85mm，行程65mm
+                // 容量控制：氨 100/50，丙烷/丙烯/HFCs 100/75/50/25
+                debug_reference: 'At 970 rpm, 4K displacement should be 85.9 m³/h (sample data)'
             },
             {
                 model: '6K',
-                displacement: 450,  // 参考转速下的理论排量（待确认实际值）
-                referenceRpm: 1450,  // 参考转速（典型值）
-                referenceDisplacement: 450,  // 参考转速下的排量
-                swept_volume_max_m3h: 558.62,  // 最大转速1800rpm下的扫气量（用于计算）
+                displacement: 239.6,  // 最大转速1800rpm下的理论排量（用于计算）
+                referenceRpm: 970,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 129,  // 参考转速970rpm下的排量（样本值）
+                swept_volume_max_m3h: 239.6,  // 最大转速1800rpm下的扫气量（用于计算）
                 cylinders: 6,
+                bore_mm: 85,  // 缸径（样本数据）
+                stroke_mm: 65,  // 行程（样本数据）
                 max_rpm: 1800,
-                rpm_range: [800, 1800],  // K系列支持800-1800rpm（官网说明）
+                rpm_range: [800, 1800],  // 样本标注：800-1800 rpm
                 clearance_factor: 0.04,  // 小型压缩机典型值
-                refrigerants: ['R717', 'Propane', 'HFCs'],
-                // 注意：排量数据需要根据实际样本确认
-                debug_reference: 'K series - multi-refrigerant small compressor, supports 800-1800rpm'
+                refrigerants: ['R717', 'Propane', 'Propylene', 'R134a', 'R407C', 'R407F', 'R404A', 'R507A'],
+                drive_method: 'Direct drive/V-belt',  // 驱动方式（样本数据）
+                capacity_control: {  // 容量控制（样本数据）
+                    'R717': [100, 66, 33],  // 氨：100/66/33
+                    'Propane_Propylene_HFCs': [100, 83, 66, 50, 33]  // 丙烷/丙烯/HFCs：100/83/66/50/33
+                },
+                // 样本数据：6K @970rpm = 129 m³/h，缸径85mm，行程65mm
+                // 容量控制：氨 100/66/33，丙烷/丙烯/HFCs 100/83/66/50/33
+                debug_reference: 'At 970 rpm, 6K displacement should be 129 m³/h (sample data)'
             },
             {
                 model: '8K',
-                displacement: 600,  // 参考转速下的理论排量（待确认实际值）
-                referenceRpm: 1450,  // 参考转速（典型值）
-                referenceDisplacement: 600,  // 参考转速下的排量
-                swept_volume_max_m3h: 744.83,  // 最大转速1800rpm下的扫气量（用于计算）
+                displacement: 319.2,  // 最大转速1800rpm下的理论排量（用于计算）
+                referenceRpm: 970,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 172,  // 参考转速970rpm下的排量（样本值）
+                swept_volume_max_m3h: 319.2,  // 最大转速1800rpm下的扫气量（用于计算）
                 cylinders: 8,
+                bore_mm: 85,  // 缸径（样本数据）
+                stroke_mm: 65,  // 行程（样本数据）
                 max_rpm: 1800,
-                rpm_range: [800, 1800],  // K系列支持800-1800rpm（官网说明）
+                rpm_range: [800, 1800],  // 样本标注：800-1800 rpm
                 clearance_factor: 0.04,  // 小型压缩机典型值
-                refrigerants: ['R717', 'Propane', 'HFCs'],
-                // 注意：排量数据需要根据实际样本确认
-                debug_reference: 'K series - multi-refrigerant small compressor, supports 800-1800rpm'
+                refrigerants: ['R717', 'Propane', 'Propylene', 'R134a', 'R407C', 'R407F', 'R404A', 'R507A'],
+                drive_method: 'Direct drive/V-belt',  // 驱动方式（样本数据）
+                capacity_control: {  // 容量控制（样本数据）
+                    'R717': [100, 75, 50, 25],  // 氨：100/75/50/25
+                    'Propane_Propylene_HFCs': [100, 75, 50, 25]  // 丙烷/丙烯/HFCs：100/75/50/25
+                },
+                // 样本数据：8K @970rpm = 172 m³/h，缸径85mm，行程65mm
+                // 容量控制：氨 100/75/50/25，丙烷/丙烯/HFCs 100/75/50/25
+                // 样本说明：多制冷剂小型压缩机，适用于直接/皮带驱动，支持多种制冷剂
+                debug_reference: 'At 970 rpm, 8K displacement should be 172 m³/h (sample data)'
             }
         ],
         'L Series (Ammonia Exclusive Design)': [
             {
-                model: '8L',
-                displacement: 800,  // 参考转速下的理论排量（待确认实际值）
-                referenceRpm: 1450,  // 参考转速（典型值）
-                referenceDisplacement: 800,  // 参考转速下的排量
-                swept_volume_max_m3h: 993.10,  // 最大转速1800rpm下的扫气量（用于计算）
-                cylinders: 8,
+                model: '4L',
+                displacement: 218,  // 参考转速970rpm下的理论排量（样本值）
+                referenceRpm: 970,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 218,  // 参考转速下的排量（样本值）
+                swept_volume_max_m3h: 404.54,  // 最大转速1800rpm下的扫气量（用于计算）
+                cylinders: 4,
+                bore_mm: 115,  // 缸径（样本数据）
+                stroke_mm: 90,  // 行程（样本数据）
                 max_rpm: 1800,
-                rpm_range: [1000, 1800],  // L系列支持1000-1800rpm（官网说明）
+                rpm_range: [1000, 1800],  // 样本标注：1000-1800 rpm
                 clearance_factor: 0.035,  // 氨专用设计典型值
                 refrigerants: ['R717'],  // 专为氨制冷剂设计
-                // 注意：排量数据需要根据实际样本确认
-                debug_reference: 'L series - compressor exclusively designed for ammonia refrigerant, 1000-1800rpm'
+                drive_method: 'Direct drive/V-belt',  // 驱动方式（样本数据）
+                capacity_control: [100, 50],  // 容量控制：100/50（样本数据）
+                // 样本数据：4L @970rpm = 218 m³/h，缸径115mm，行程90mm
+                // 样本说明：专为氨制冷剂设计的往复式压缩机，适用于制冷和冷冻应用
+                debug_reference: 'At 970 rpm, 4L displacement should be 218 m³/h (sample data)'
+            },
+            {
+                model: '6L',
+                displacement: 326,  // 参考转速970rpm下的理论排量（样本值）
+                referenceRpm: 970,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 326,  // 参考转速下的排量（样本值）
+                swept_volume_max_m3h: 604.96,  // 最大转速1800rpm下的扫气量（用于计算）
+                cylinders: 6,
+                bore_mm: 115,  // 缸径（样本数据）
+                stroke_mm: 90,  // 行程（样本数据）
+                max_rpm: 1800,
+                rpm_range: [1000, 1800],  // 样本标注：1000-1800 rpm
+                clearance_factor: 0.035,  // 氨专用设计典型值
+                refrigerants: ['R717'],  // 专为氨制冷剂设计
+                drive_method: 'Direct drive/V-belt',  // 驱动方式（样本数据）
+                capacity_control: [100, 66, 33],  // 容量控制：100/66/33（样本数据）
+                // 样本数据：6L @970rpm = 326 m³/h，缸径115mm，行程90mm
+                // 样本说明：专为氨制冷剂设计的往复式压缩机，适用于制冷和冷冻应用
+                debug_reference: 'At 970 rpm, 6L displacement should be 326 m³/h (sample data)'
+            },
+            {
+                model: '8L',
+                displacement: 435,  // 参考转速970rpm下的理论排量（样本值）
+                referenceRpm: 970,  // 参考转速（样本标注的转速）
+                referenceDisplacement: 435,  // 参考转速下的排量（样本值）
+                swept_volume_max_m3h: 807.23,  // 最大转速1800rpm下的扫气量（用于计算）
+                cylinders: 8,
+                bore_mm: 115,  // 缸径（样本数据）
+                stroke_mm: 90,  // 行程（样本数据）
+                max_rpm: 1800,
+                rpm_range: [1000, 1800],  // 样本标注：1000-1800 rpm
+                clearance_factor: 0.035,  // 氨专用设计典型值
+                refrigerants: ['R717'],  // 专为氨制冷剂设计
+                drive_method: 'Direct drive/V-belt',  // 驱动方式（样本数据）
+                capacity_control: [100, 75, 50, 25],  // 容量控制：100/75/50/25（样本数据）
+                // 样本数据：8L @970rpm = 435 m³/h，缸径115mm，行程90mm
+                // 样本说明：专为氨制冷剂设计的往复式压缩机，适用于制冷和冷冻应用，适应宽运行范围
+                debug_reference: 'At 970 rpm, 8L displacement should be 435 m³/h (sample data)'
             }
         ]
     },
